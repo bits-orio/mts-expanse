@@ -1934,7 +1934,11 @@ local function process_hungry_chests(state)
         local entity = container and container.entity or nil
         if entity and entity.valid then
             state.hungry_scan_live_containers = (state.hungry_scan_live_containers or 0) + 1
-            local expansion_position = Functions.set_container(state, entity, nil, false)
+            -- reveal=true: the scan now initialises any chest it touches, so a fresh chest
+            -- gets its price + filter without waiting for a player to open it. Existing
+            -- unrevealed chests on the live save self-heal the next time the scan reaches
+            -- them. The HUNGRY_SCAN_BUDGET cap keeps the catch-up cost bounded per tick.
+            local expansion_position = Functions.set_container(state, entity, nil, true)
             if expansion_position then
                 state.last_hungry_completion_tick = game.tick
                 handle_completed_container(state, expansion_position)

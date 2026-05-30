@@ -344,16 +344,38 @@ local function register_container(expanse, entity, known_left_top)
         return nil
     end
 
+    expanse.containers = expanse.containers or {}
+    local container = expanse.containers[entity.unit_number]
+
     local left_top = known_left_top
     if not left_top or is_cell_open(expanse, left_top) then
         left_top = get_left_top(expanse, entity.position)
     end
     if not left_top or is_cell_open(expanse, left_top) then
+        -- Couldn't derive a fresh unopen boundary for this chest. For an existing
+        -- registration whose stored target cell is still unopen, keep using it (this is the
+        -- normal "between scans" case). Otherwise the chest is orphaned -- its target cell
+        -- was unlocked through another route and no adjacent unopen cell exists, which is
+        -- the "water-boundary bugged chest" pattern: the would-be next cell is water so
+        -- get_left_top has no out-of-map tile to lock onto. Clean up the stray entity +
+        -- bookkeeping; ensure_frontier_chests will create a proper replacement if a real
+        -- frontier still needs one.
+        if container and container.left_top and not is_cell_open(expanse, container.left_top) then
+            container.entity = entity
+            container.force_name = expanse.force_name
+            container.surface_index = expanse.active_surface_index
+            return container
+        end
+        if container then
+            destroy_container_renders(container)
+            expanse.containers[entity.unit_number] = nil
+        end
+        if entity.valid then
+            entity.destroy()
+        end
         return nil
     end
 
-    expanse.containers = expanse.containers or {}
-    local container = expanse.containers[entity.unit_number]
     if not container then
         container = {
             entity = entity,
