@@ -1,4 +1,13 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.10
+Date: 01. 06. 2026
+  Bugfixes:
+    - Prevented MTS team initialization from resetting the global Factorio game timer.
+    - Fixed lake fish being deleted when water cells are opened by no longer treating fish as
+      natural enemies during Expanse cell cleanup.
+  Tests:
+    - Added headless lake fish open probes for standalone and MTS team scenarios.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.9
 Date: 31. 05. 2026
   Bugfixes:

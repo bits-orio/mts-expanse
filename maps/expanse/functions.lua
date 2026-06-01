@@ -487,8 +487,7 @@ end
 local natural_enemy_entity_types = {
     unit = true,
     turret = true,
-    ['unit-spawner'] = true,
-    fish = true
+    ['unit-spawner'] = true
 }
 
 local function is_natural_enemy_entity(entity)
@@ -504,7 +503,7 @@ local function destroy_natural_enemy_entities(surface, area)
         return 0
     end
 
-    local filters = { type = { 'unit', 'turret', 'unit-spawner', 'fish' }, force = { 'enemy', 'neutral' } }
+    local filters = { type = { 'unit', 'turret', 'unit-spawner' }, force = { 'enemy', 'neutral' } }
     if area then
         filters.area = area
     end
