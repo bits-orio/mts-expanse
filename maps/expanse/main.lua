@@ -1264,7 +1264,7 @@ function Public.forfeit_impl.position_dialog(player, frame)
     }
 end
 
-function Public.forfeit_impl.open_dialog(player, automatic, final_confirm)
+function Public.forfeit_impl.open_dialog(player, automatic, final_confirm, death_count)
     if not (player and player.valid) then
         return
     end
@@ -1280,17 +1280,19 @@ function Public.forfeit_impl.open_dialog(player, automatic, final_confirm)
         caption = {'expanse.forfeit_title'},
         direction = 'vertical'
     })
+    frame.style.minimal_width = FORFEIT_DIALOG_WIDTH
     frame.style.maximal_width = FORFEIT_DIALOG_WIDTH
     Public.forfeit_impl.position_dialog(player, frame)
     local body = frame.add({
         type = 'label',
-        caption = final_confirm and {'expanse.forfeit_final_body'} or (automatic and {'expanse.forfeit_auto_body', FORFEIT_DEATH_THRESHOLD} or {'expanse.forfeit_body'})
+        caption = final_confirm and {'expanse.forfeit_final_body'} or (automatic and {'expanse.forfeit_auto_body', death_count or FORFEIT_DEATH_THRESHOLD} or {'expanse.forfeit_body'})
     })
     body.style.single_line = false
     body.style.maximal_width = 440
     body.style.bottom_margin = 8
 
     local buttons = frame.add({ type = 'flow', direction = 'horizontal' })
+    buttons.style.horizontal_align = 'center'
     buttons.style.horizontal_spacing = 8
     buttons.add({
         type = 'button',
@@ -1589,8 +1591,7 @@ function Public.forfeit_impl.on_player_died(event)
     expanse.forfeit_player_deaths[key] = entry
 
     if entry.count >= FORFEIT_DEATH_THRESHOLD then
-        Public.forfeit_impl.open_dialog(player, true)
-        entry.count = 0
+        Public.forfeit_impl.open_dialog(player, true, false, entry.count)
         entry.last_prompt_tick = game.tick
     end
 end

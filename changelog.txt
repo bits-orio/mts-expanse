@@ -11,6 +11,8 @@ Date: 01. 06. 2026
       Expanse land.
     - Added a top-bar skull button, confirmation dialog, /expanse-forfeit command, and
       automatic prompt after 2 biter deaths within 1 minute.
+    - Kept the Forfeit prompt top-centered without covering the death timer, and update its
+      death count when players keep dying in the prompt window.
     - Forfeit completion announcements are global so all teams can see which force forfeited.
   Tests:
     - Added headless lake fish open probes for standalone and MTS team scenarios.
