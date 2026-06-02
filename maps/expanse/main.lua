@@ -56,6 +56,7 @@ local DEFAULT_SOURCE_SURFACE = 'nauvis'
 local SHARED_SOURCE_SURFACE = 'mts-expanse-meta-source'
 local reset
 local destroy_natural_enemy_entities
+local FISH_BACKFILL_VERSION = '0.1.10-fish-v2'
 
 local function startup_setting(name, default)
     local setting = settings.startup[name]
@@ -2115,6 +2116,12 @@ local function process_state_tick(state)
         return
     end
     update_overlay(state)
+    if state.fish_backfill_version ~= FISH_BACKFILL_VERSION then
+        local fish_backfill = Functions.ensure_open_cell_fish(state, 64)
+        if fish_backfill.done then
+            state.fish_backfill_version = FISH_BACKFILL_VERSION
+        end
+    end
     if state.next_mts_nauvis_cleanup_tick and game.tick >= state.next_mts_nauvis_cleanup_tick then
         cleanup_mts_nauvis_surfaces(state)
     end
@@ -3250,18 +3257,15 @@ commands.add_command(
         source_surface.set_tiles(tiles, true)
 
         local fish_area = { { position.x - 3, position.y - 3 }, { position.x + 3, position.y + 3 } }
+        local removed_fish = 0
         for _, fish in pairs(source_surface.find_entities_filtered({ area = fish_area, name = 'fish' })) do
             if fish.valid then
                 fish.destroy()
+                removed_fish = removed_fish + 1
             end
         end
 
-        local fish = source_surface.create_entity({ name = 'fish', position = position, force = 'neutral' })
-        if not fish then
-            return { ok = false, error = 'failed to create source fish' }
-        end
-
-        return { ok = true, source_surface_name = source_surface.name }
+        return { ok = true, source_surface_name = source_surface.name, removed_fish = removed_fish }
     end
 
     function Public.probe_cell_open_biters(force_name)
@@ -3433,6 +3437,7 @@ commands.add_command(
             force_name = state_key(state),
             surface_name = surface.name,
             source_surface_name = source_prepared.source_surface_name,
+            source_fish_removed = source_prepared.removed_fish,
             target = target.left_top,
             fish_position = fish_position,
             source_prepared = source_prepared.ok,
