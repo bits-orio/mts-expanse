@@ -487,8 +487,7 @@ end
 local natural_enemy_entity_types = {
     unit = true,
     turret = true,
-    ['unit-spawner'] = true,
-    fish = true
+    ['unit-spawner'] = true
 }
 
 local function is_natural_enemy_entity(entity)
@@ -504,7 +503,7 @@ local function destroy_natural_enemy_entities(surface, area)
         return 0
     end
 
-    local filters = { type = { 'unit', 'turret', 'unit-spawner', 'fish' }, force = { 'enemy', 'neutral' } }
+    local filters = { type = { 'unit', 'turret', 'unit-spawner' }, force = { 'enemy', 'neutral' } }
     if area then
         filters.area = area
     end
@@ -517,6 +516,63 @@ local function destroy_natural_enemy_entities(surface, area)
         end
     end
     return removed
+end
+
+local function water_tiles_for_fish(surface, area)
+    local candidates = {}
+    for _, tile in pairs(surface.find_tiles_filtered({ area = area, collision_mask = 'water_tile' })) do
+        candidates[#candidates + 1] = { x = tile.position.x + 0.5, y = tile.position.y + 0.5 }
+    end
+    table.sort(candidates, function(a, b)
+        if a.x ~= b.x then
+            return a.x < b.x
+        end
+        return a.y < b.y
+    end)
+    return candidates
+end
+
+local function ensure_cell_fish(expanse, surface, left_top, area, meta_cell)
+    if game.tick == expanse.reset_tick or not (surface and surface.valid) then
+        return 0
+    end
+    if surface.count_entities_filtered({ area = area, name = 'fish' }) > 0 then
+        return 0
+    end
+
+    local water_tiles = water_tiles_for_fish(surface, area)
+    if #water_tiles < 6 then
+        return 0
+    end
+
+    meta_cell = meta_cell or (expanse.sync_cell_content ~= false and ensure_meta_cell(expanse, left_top) or nil)
+    if meta_cell and not meta_cell.fish_positions then
+        local fish_count = math.min(4, math.max(1, math.floor(#water_tiles / 40)))
+        meta_cell.fish_positions = {}
+        local used = {}
+        for index = 1, fish_count, 1 do
+            local tile_index = cell_random_int(expanse, left_top, 72000 + index * 1000, #water_tiles)
+            while used[tile_index] do
+                tile_index = tile_index % #water_tiles + 1
+            end
+            used[tile_index] = true
+            meta_cell.fish_positions[#meta_cell.fish_positions + 1] = table.deepcopy(water_tiles[tile_index])
+        end
+    end
+
+    local positions = meta_cell and meta_cell.fish_positions or {}
+    if not positions[1] and expanse.sync_cell_content == false then
+        positions = { water_tiles[math.random(1, #water_tiles)] }
+    end
+
+    local created = 0
+    for _, position in ipairs(positions) do
+        local fish = surface.create_entity({ name = 'fish', position = position, force = 'neutral' })
+        if fish then
+            created = created + 1
+        end
+    end
+    return created
 end
 
 local function track_cell_biter(expanse, entity)
@@ -1177,6 +1233,7 @@ function Public.expand(expanse, left_top)
     SpaceMissions.convert_entities(surface, left_top, custom_tier, square_size)
     SpaceMissions.convert_decoratives(surface, left_top, custom_tier, square_size)
     SpaceMissions.place_special_tiered_object(expanse, tier, surface, left_top, custom_tier)
+    ensure_cell_fish(expanse, surface, left_top, area, meta_cell)
 
     if game.tick == expanse.reset_tick then
         local a = math.floor(expanse.square_size * 0.5)
@@ -1454,6 +1511,56 @@ end
 
 Public.cell_random_int = cell_random_int
 Public.ensure_meta_cell = ensure_meta_cell
+
+function Public.ensure_open_cell_fish(expanse, max_cells)
+    local surface = expanse and expanse.active_surface_index and game.surfaces[expanse.active_surface_index]
+    if not (surface and surface.valid) then
+        return { done = true, processed = 0, created = 0 }
+    end
+
+    if not expanse.fish_backfill_keys then
+        local keys = {}
+        for key, is_open in pairs(expanse.grid or {}) do
+            if is_open then
+                keys[#keys + 1] = key
+            end
+        end
+        table.sort(keys)
+        expanse.fish_backfill_keys = keys
+        expanse.fish_backfill_index = 1
+        expanse.fish_backfill_created = 0
+        expanse.fish_backfill_processed = 0
+        expanse.fish_backfill_started_tick = game.tick
+    end
+
+    local processed = 0
+    local created = 0
+    max_cells = max_cells or 64
+    while processed < max_cells and expanse.fish_backfill_index <= #expanse.fish_backfill_keys do
+        local key = expanse.fish_backfill_keys[expanse.fish_backfill_index]
+        expanse.fish_backfill_index = expanse.fish_backfill_index + 1
+        processed = processed + 1
+
+        local left_top = parse_grid_key(key)
+        if left_top then
+            local square_size = expanse.square_size
+            local area = { { left_top.x, left_top.y }, { left_top.x + square_size, left_top.y + square_size } }
+            local meta_cell = expanse.sync_cell_content ~= false and ensure_meta_cell(expanse, left_top) or nil
+            created = created + ensure_cell_fish(expanse, surface, left_top, area, meta_cell)
+        end
+    end
+
+    expanse.fish_backfill_created = (expanse.fish_backfill_created or 0) + created
+    expanse.fish_backfill_processed = (expanse.fish_backfill_processed or 0) + processed
+    local done = expanse.fish_backfill_index > #expanse.fish_backfill_keys
+    if done then
+        expanse.fish_backfill_completed_tick = game.tick
+        expanse.fish_backfill_keys = nil
+        expanse.fish_backfill_index = nil
+    end
+
+    return { done = done, processed = processed, created = created, total_created = expanse.fish_backfill_created or 0 }
+end
 
 function Public.chest_value(expanse, player)
     if not player or not player.valid then return end

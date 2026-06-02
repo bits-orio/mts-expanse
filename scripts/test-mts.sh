@@ -446,6 +446,22 @@ local function assert_cell_open_biters(force_name)
     return probe
 end
 
+local function assert_cell_open_fish(force_name)
+    local probe = remote.call('mts_expanse', 'probe_cell_open_fish', force_name)
+    if type(probe) ~= 'table' or probe.ok ~= true then
+        fail(
+            force_name .. ' cell-open fish probe failed: opened=' .. tostring(probe and probe.opened) ..
+            ' before_dest_fish=' .. tostring(probe and probe.before_dest_fish) ..
+            ' after_dest_fish=' .. tostring(probe and probe.after_dest_fish) ..
+            ' natural_enemy_count=' .. tostring(probe and probe.natural_enemy_count) ..
+            ' tile=' .. tostring(probe and probe.tile) ..
+            ' source_prepared=' .. tostring(probe and probe.source_prepared) ..
+            ' error=' .. tostring(probe and probe.error)
+        )
+    end
+    return probe
+end
+
 local function assert_invasion_triggers(force_name, probe)
     local state = remote.call('mts_expanse', 'get_state', force_name)
     local tracker = state and state.invasion_tracker or {}
@@ -670,6 +686,7 @@ script.on_nth_tick(30, function()
                 )
             end
             assert_cell_open_biters(force_name)
+            assert_cell_open_fish(force_name)
             local variants_probe = remote.call('mts_expanse', 'probe_admin_open_variants', force_name)
             if type(variants_probe) ~= 'table' or variants_probe.ok ~= true then
                 local open_at = variants_probe and variants_probe.open_at or {}

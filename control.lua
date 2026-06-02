@@ -132,6 +132,9 @@ remote.add_interface(
         end,
         probe_cell_open_biters = function (force_name)
             return Expanse.probe_cell_open_biters(force_name)
+        end,
+        probe_cell_open_fish = function (force_name)
+            return Expanse.probe_cell_open_fish(force_name)
         end
     }
 )

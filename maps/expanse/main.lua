@@ -56,6 +56,7 @@ local DEFAULT_SOURCE_SURFACE = 'nauvis'
 local SHARED_SOURCE_SURFACE = 'mts-expanse-meta-source'
 local reset
 local destroy_natural_enemy_entities
+local FISH_BACKFILL_VERSION = '0.1.10-fish-v2'
 
 local function startup_setting(name, default)
     local setting = settings.startup[name]
@@ -978,7 +979,9 @@ reset = function(state)
         player.teleport(surface.find_non_colliding_position('character', { state.square_size * 0.5, state.square_size * 0.5 }, 8, 0.5) or {5, 5}, surface)
     end
     schedule_mts_nauvis_cleanup(state, 120)
-    game.reset_time_played()
+    if not is_mts_active() then
+        game.reset_time_played()
+    end
     if SpaceMissions.enabled() then
         script.raise_event(expanse.events.mission_gui_update, { force_name = state_key(state) })
     end
@@ -988,8 +991,7 @@ local ores = { 'copper-ore', 'iron-ore', 'stone', 'coal', 'iron-ore', 'copper-or
 local natural_enemy_entity_types = {
     unit = true,
     turret = true,
-    ['unit-spawner'] = true,
-    fish = true
+    ['unit-spawner'] = true
 }
 
 local function is_natural_enemy_entity(entity)
@@ -1012,7 +1014,7 @@ local function count_natural_enemy_entities(surface, area, state)
     if not (surface and surface.valid) then
         return 0
     end
-    local filters = { type = { 'unit', 'turret', 'unit-spawner', 'fish' }, force = { 'enemy', 'neutral' } }
+    local filters = { type = { 'unit', 'turret', 'unit-spawner' }, force = { 'enemy', 'neutral' } }
     if area then
         filters.area = area
     end
@@ -1046,7 +1048,7 @@ destroy_natural_enemy_entities = function(surface, area, state)
     if not (surface and surface.valid) then
         return 0
     end
-    local filters = { type = { 'unit', 'turret', 'unit-spawner', 'fish' }, force = { 'enemy', 'neutral' } }
+    local filters = { type = { 'unit', 'turret', 'unit-spawner' }, force = { 'enemy', 'neutral' } }
     if area then
         filters.area = area
     end
@@ -2114,6 +2116,12 @@ local function process_state_tick(state)
         return
     end
     update_overlay(state)
+    if state.fish_backfill_version ~= FISH_BACKFILL_VERSION then
+        local fish_backfill = Functions.ensure_open_cell_fish(state, 64)
+        if fish_backfill.done then
+            state.fish_backfill_version = FISH_BACKFILL_VERSION
+        end
+    end
     if state.next_mts_nauvis_cleanup_tick and game.tick >= state.next_mts_nauvis_cleanup_tick then
         cleanup_mts_nauvis_surfaces(state)
     end
@@ -3228,6 +3236,38 @@ commands.add_command(
         return true
     end
 
+    local function prepare_cell_fish_probe_source(state, position)
+        local source_surface = game.surfaces[state.source_surface]
+        if not (source_surface and source_surface.valid) then
+            return { ok = false, error = 'missing source surface' }
+        end
+
+        source_surface.request_to_generate_chunks(position, 1)
+        source_surface.force_generate_chunk_requests()
+
+        local tiles = {}
+        for dx = -2, 2, 1 do
+            for dy = -2, 2, 1 do
+                tiles[#tiles + 1] = {
+                    name = 'water',
+                    position = { math.floor(position.x) + dx, math.floor(position.y) + dy }
+                }
+            end
+        end
+        source_surface.set_tiles(tiles, true)
+
+        local fish_area = { { position.x - 3, position.y - 3 }, { position.x + 3, position.y + 3 } }
+        local removed_fish = 0
+        for _, fish in pairs(source_surface.find_entities_filtered({ area = fish_area, name = 'fish' })) do
+            if fish.valid then
+                fish.destroy()
+                removed_fish = removed_fish + 1
+            end
+        end
+
+        return { ok = true, source_surface_name = source_surface.name, removed_fish = removed_fish }
+    end
+
     function Public.probe_cell_open_biters(force_name)
         local state = force_name and state_from_force_name(force_name) or expanse
         ensure_state_ready(state)
@@ -3318,6 +3358,97 @@ commands.add_command(
             before_natural_enemies = before_natural_enemies,
             natural_enemy_count = natural_enemy_count,
             tracker = state.cell_biter_tracker
+        }
+    end
+
+    function Public.probe_cell_open_fish(force_name)
+        local state = force_name and state_from_force_name(force_name) or expanse
+        ensure_state_ready(state)
+        local surface = game.surfaces[state.active_surface_index]
+        if not (surface and surface.valid) then
+            return { ok = false, error = 'missing active surface', force_name = state_key(state) }
+        end
+
+        local target = first_admin_open_target(state)
+        if not target then
+            return { ok = false, error = 'missing hungry chest target', force_name = state_key(state) }
+        end
+
+        local a = math.floor(state.square_size * 0.5)
+        local fish_position = { x = target.left_top.x + a, y = target.left_top.y + a }
+        local area = { { target.left_top.x, target.left_top.y }, { target.left_top.x + state.square_size, target.left_top.y + state.square_size } }
+        local source_prepared = prepare_cell_fish_probe_source(state, fish_position)
+        if not source_prepared.ok then
+            source_prepared.force_name = state_key(state)
+            source_prepared.target = target.left_top
+            source_prepared.fish_position = fish_position
+            return source_prepared
+        end
+
+        local source_surface = game.surfaces[state.source_surface]
+        local source_is_destination = source_surface and source_surface.valid and source_surface.name == surface.name
+        if not source_is_destination then
+            for _, fish in pairs(surface.find_entities_filtered({ area = area, name = 'fish' })) do
+                if fish.valid then
+                    fish.destroy()
+                end
+            end
+        end
+
+        local cell = Functions.ensure_meta_cell(state, target.left_top)
+        if cell then
+            cell.cell_biter_spawn = false
+            cell.cell_biter_source_positions = {}
+            cell.cell_biter_camp = { entities = {}, unit_sources = {} }
+        end
+
+        local before_dest_fish = surface.count_entities_filtered({ area = area, name = 'fish' })
+        local removed_chests = 0
+        local results = { pcall(function()
+            return run_admin_open_batch(state, function()
+                local opened_cell, removed = open_admin_cell(state, target.left_top)
+                removed_chests = removed or 0
+                return opened_cell and 1 or 0
+            end)
+        end) }
+
+        if not results[1] then
+            return {
+                ok = false,
+                error = tostring(results[2]),
+                force_name = state_key(state),
+                target = target.left_top,
+                fish_position = fish_position,
+                source_prepared = source_prepared.ok
+            }
+        end
+
+        local opened_count = results[2] or 0
+        local created_chests = results[4] or 0
+        local after_dest_fish = surface.count_entities_filtered({ area = area, name = 'fish' })
+        local natural_enemy_count = count_natural_enemy_entities(surface, area, state)
+        local tile = surface.get_tile(fish_position)
+        local tile_name = tile and tile.name or nil
+        local ok = opened_count == 1 and after_dest_fish > 0 and natural_enemy_count == 0 and tile_name == 'water'
+
+        return {
+            ok = ok,
+            error = ok and nil or 'cell open did not preserve lake fish cleanly',
+            force_name = state_key(state),
+            surface_name = surface.name,
+            source_surface_name = source_prepared.source_surface_name,
+            source_fish_removed = source_prepared.removed_fish,
+            target = target.left_top,
+            fish_position = fish_position,
+            source_prepared = source_prepared.ok,
+            opened = opened_count,
+            removed_chests = removed_chests,
+            created_chests = created_chests,
+            before_dest_fish = before_dest_fish,
+            after_dest_fish = after_dest_fish,
+            natural_enemy_count = natural_enemy_count,
+            source_is_destination = source_is_destination,
+            tile = tile_name
         }
     end
 

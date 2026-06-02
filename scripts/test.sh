@@ -254,6 +254,24 @@ local function assert_cell_open_biters()
     end
 end
 
+local function assert_cell_open_fish()
+    local probe = remote.call('mts_expanse', 'probe_cell_open_fish')
+    if type(probe) ~= 'table' then
+        error('cell-open fish probe did not return a table')
+    end
+    if probe.ok ~= true then
+        error(
+            'cell-open fish probe failed: opened=' .. tostring(probe.opened) ..
+            ' before_dest_fish=' .. tostring(probe.before_dest_fish) ..
+            ' after_dest_fish=' .. tostring(probe.after_dest_fish) ..
+            ' natural_enemy_count=' .. tostring(probe.natural_enemy_count) ..
+            ' tile=' .. tostring(probe.tile) ..
+            ' source_prepared=' .. tostring(probe.source_prepared) ..
+            ' error=' .. tostring(probe.error)
+        )
+    end
+end
+
 local function assert_admin_open_variants()
     local probe = remote.call('mts_expanse', 'probe_admin_open_variants')
     if type(probe) ~= 'table' then
@@ -464,6 +482,7 @@ script.on_nth_tick(
 		        assert_hungry_chest_expanded('after chest completion', completion_context)
 		        assert_admin_open_chest_lifecycle()
 		        assert_cell_open_biters()
+		        assert_cell_open_fish()
 		        assert_admin_open_variants()
 	        assert_frontier_repair()
 	        assert_vanilla_rocket_gating()
