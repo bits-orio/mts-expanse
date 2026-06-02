@@ -5,8 +5,16 @@ Date: 01. 06. 2026
     - Prevented MTS team initialization from resetting the global Factorio game timer.
     - Fixed lake fish being missing after water cells are opened by preserving existing fish and
       deterministically seeding fish into fishless opened lakes.
+  Features:
+    - Added a player-facing Forfeit action that clears team inventories, corpses, dropped items,
+      player-built entities, and active biter attacks while preserving research and unlocked
+      Expanse land.
+    - Added a top-bar skull button, confirmation dialog, /expanse-forfeit command, and
+      automatic prompt after 2 biter deaths within 1 minute.
+    - Forfeit completion announcements are global so all teams can see which force forfeited.
   Tests:
     - Added headless lake fish open probes for standalone and MTS team scenarios.
+    - Added headless probes for Forfeit behavior in standalone and MTS team modes.
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.9
 Date: 31. 05. 2026

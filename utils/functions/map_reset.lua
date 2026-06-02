@@ -18,7 +18,7 @@ function Public.reset_table()
     for k, _ in pairs(this) do
         this[k] = nil
     end
-    this.soft_reset_counter = 0
+    this.reset_counter = 0
     this.original_surface_name = nil
     this.schedule_step = 0
     this.schedule_max_step = 0
@@ -140,7 +140,7 @@ end
 
 Event.on_nth_tick(10, scheduled_surface_clearing)
 
----------------------------soft reset-------------------------------------------
+---------------------------map reset--------------------------------------------
 
 local function reset_forces(new_surface, old_surface)
     for _, f in pairs(game.forces) do
@@ -208,13 +208,13 @@ local function clear_robots(new_surface)
     end
 end
 
-function Public.soft_reset_map(old_surface, map_gen_settings, player_starting_items, small_force_chunk, delay)
+function Public.reset_map(old_surface, map_gen_settings, player_starting_items, small_force_chunk, delay)
     if not this.original_surface_name then
         this.original_surface_name = old_surface.name
     end
-    this.soft_reset_counter = this.soft_reset_counter + 1
+    this.reset_counter = this.reset_counter + 1
 
-    local new_surface = game.create_surface(this.original_surface_name .. '_' .. tostring(this.soft_reset_counter), map_gen_settings)
+    local new_surface = game.create_surface(this.original_surface_name .. '_' .. tostring(this.reset_counter), map_gen_settings)
     if not small_force_chunk then
         new_surface.request_to_generate_chunks({ 0, 0 }, 1)
         new_surface.force_generate_chunk_requests()
@@ -233,23 +233,23 @@ function Public.soft_reset_map(old_surface, map_gen_settings, player_starting_it
     Public.change_entities_to_neutral(old_surface)
     Public.add_schedule_to_delete_surface(old_surface)
 
-    local to_discord = { 'modules.soft_reset_welcome', this.original_surface_name }
-    local restarting_to_discord = { 'modules.soft_reset_reshape', this.original_surface_name, tostring(this.soft_reset_counter) }
+    local to_discord = { 'modules.reset_welcome', this.original_surface_name }
+    local restarting_to_discord = { 'modules.reset_reshape', this.original_surface_name, tostring(this.reset_counter) }
 
     local message
     if this.enable_mapkeeper then
-        message = { 'modules.soft_reset_welcome_mapkeeper', this.original_surface_name }
+        message = { 'modules.reset_welcome_mapkeeper', this.original_surface_name }
     else
         message = to_discord
     end
 
-    if this.soft_reset_counter > 1 then
+    if this.reset_counter > 1 then
         if this.enable_mapkeeper then
             message =
             {
-                'modules.soft_reset_reshape_mapkeeper',
+                'modules.reset_reshape_mapkeeper',
                 this.original_surface_name,
-                tostring(this.soft_reset_counter)
+                tostring(this.reset_counter)
             }
         else
             message = restarting_to_discord
@@ -266,9 +266,9 @@ function Public.soft_reset_map(old_surface, map_gen_settings, player_starting_it
     return new_surface
 end
 
---- Returns the amount of times the server has soft restarted.
+--- Returns the amount of times the server has reset.
 function Public.get_reset_counter()
-    return this.soft_reset_counter
+    return this.reset_counter
 end
 
 --- Customizes the message with the mapkeeper param.
