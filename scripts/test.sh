@@ -272,6 +272,27 @@ local function assert_cell_open_fish()
     end
 end
 
+local function assert_forfeit()
+    local probe = remote.call('mts_expanse', 'probe_forfeit')
+    if type(probe) ~= 'table' then
+        error('forfeit probe did not return a table')
+    end
+    if probe.ok ~= true then
+        error(
+            'forfeit probe failed: before_size=' .. tostring(probe.before_size) ..
+            ' after_size=' .. tostring(probe.after_size) ..
+            ' same_surface=' .. tostring(probe.same_surface) ..
+            ' tech_preserved=' .. tostring(probe.tech_preserved) ..
+            ' building_removed=' .. tostring(probe.building_removed) ..
+            ' biter_removed=' .. tostring(probe.biter_removed) ..
+            ' enemy_count=' .. tostring(probe.enemy_count) ..
+            ' ground_items=' .. tostring(probe.ground_items) ..
+            ' chest_count=' .. tostring(probe.chest_count) ..
+            ' error=' .. tostring(probe.error)
+        )
+    end
+end
+
 local function assert_admin_open_variants()
     local probe = remote.call('mts_expanse', 'probe_admin_open_variants')
     if type(probe) ~= 'table' then
@@ -483,6 +504,7 @@ script.on_nth_tick(
 		        assert_admin_open_chest_lifecycle()
 		        assert_cell_open_biters()
 		        assert_cell_open_fish()
+		        assert_forfeit()
 		        assert_admin_open_variants()
 	        assert_frontier_repair()
 	        assert_vanilla_rocket_gating()

@@ -88,6 +88,9 @@ remote.add_interface(
         reset = function (force_name)
             return Expanse.reset(force_name)
         end,
+        forfeit = function (force_name)
+            return Expanse.forfeit(force_name)
+        end,
         get_state = function (force_name)
             return Expanse.get_state(force_name)
         end,
@@ -135,6 +138,9 @@ remote.add_interface(
         end,
         probe_cell_open_fish = function (force_name)
             return Expanse.probe_cell_open_fish(force_name)
+        end,
+        probe_forfeit = function (force_name)
+            return Expanse.probe_forfeit(force_name)
         end
     }
 )

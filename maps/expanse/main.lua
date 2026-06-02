@@ -44,19 +44,30 @@ Global.register(
 
 local main_button_name = Gui.uid_name()
 local missions_button_name = Gui.uid_name()
+local forfeit_button_name = Gui.uid_name()
+local forfeit_button_sprite = 'virtual-signal/signal-skull'
 local main_frame_name = Gui.uid_name()
 local close_main_frame_button_name = Gui.uid_name()
 local missions_frame_name = Gui.uid_name()
 local close_missions_button_name = Gui.uid_name()
+local forfeit_frame_name = Gui.uid_name()
+local forfeit_confirm_button_name = Gui.uid_name()
+local forfeit_final_confirm_button_name = Gui.uid_name()
+local forfeit_cancel_button_name = Gui.uid_name()
 
 local MTS_INTERFACE = 'mts-v1'
 local DEFAULT_FORCE_NAME = 'player'
 local DEFAULT_SURFACE_NAME = 'expanse'
 local DEFAULT_SOURCE_SURFACE = 'nauvis'
 local SHARED_SOURCE_SURFACE = 'mts-expanse-meta-source'
+local FORFEIT_DEATH_THRESHOLD = 2
+local FORFEIT_DEATH_WINDOW_TICKS = 60 * 60
+local FORFEIT_DIALOG_WIDTH = 480
+local FORFEIT_DIALOG_TOP_OFFSET = 72
 local reset
 local destroy_natural_enemy_entities
 local FISH_BACKFILL_VERSION = '0.1.10-fish-v2'
+Public.forfeit_impl = {}
 
 local function startup_setting(name, default)
     local setting = settings.startup[name]
@@ -248,6 +259,7 @@ local function ensure_indexes()
     expanse.meta_map.cells = expanse.meta_map.cells or {}
     expanse.meta_map.shared_seed = expanse.shared_seed
     expanse.meta_map.biome_offset = expanse.shared_biome_offset
+    expanse.forfeit_player_deaths = expanse.forfeit_player_deaths or {}
 end
 
 local function state_key(state)
@@ -362,6 +374,7 @@ local function init_state_defaults(state, force_name)
     state.rocket_launch_weight_threshold = config.rocket_launch_weight_threshold
     state.cell_biter_units = state.cell_biter_units or {}
     state.cell_biter_tracker = state.cell_biter_tracker or {}
+    state.forfeit_history = state.forfeit_history or {}
 end
 
 local function ensure_team_state(force_name)
@@ -728,6 +741,17 @@ local function create_button(player)
         else
             destroy_missions_gui(player)
         end
+        buttons[#buttons + 1] =
+            Gui.add_mod_button(
+                player,
+                {
+                    type = 'sprite-button',
+                    name = forfeit_button_name,
+                    sprite = forfeit_button_sprite,
+                    tooltip = {'expanse.forfeit_button'},
+                    style = Gui.button_style
+                }
+            )
         for _, button in pairs(buttons) do
             if button and button.valid then
                 button.style.font_color = { 165, 165, 165 }
@@ -765,6 +789,17 @@ local function create_button(player)
         else
             destroy_missions_gui(player)
         end
+        buttons[#buttons + 1] =
+            player.gui.top[forfeit_button_name] or
+            player.gui.top.add(
+                {
+                    type = 'sprite-button',
+                    name = forfeit_button_name,
+                    sprite = forfeit_button_sprite,
+                    tooltip = {'expanse.forfeit_button'},
+                    style = Gui.button_style
+                }
+            )
         for _, button in pairs(buttons) do
             if button and button.valid then
                 button.style.font_color = { r = 0.11, g = 0.8, b = 0.44 }
@@ -1200,6 +1235,367 @@ local function is_invasion_schedule_event(stuff)
     return stuff and (stuff.event == 'invasion_warn' or stuff.event == 'invasion_detonate' or stuff.event == 'invasion_trigger')
 end
 
+function Public.forfeit_impl.state_from_player_force(player)
+    if not (player and player.valid and player.force and player.force.valid) then
+        return nil
+    end
+    if is_mts_active() and not is_team_force_name(player.force.name) then
+        return nil
+    end
+    return state_from_force_name(player.force.name)
+end
+
+function Public.forfeit_impl.destroy_dialog(player)
+    if player and player.valid and player.gui.screen[forfeit_frame_name] then
+        player.gui.screen[forfeit_frame_name].destroy()
+    end
+end
+
+function Public.forfeit_impl.position_dialog(player, frame)
+    local display_resolution = player.display_resolution
+    local display_scale = player.display_scale or 1
+    local screen_width = display_resolution and display_resolution.width or FORFEIT_DIALOG_WIDTH
+    if display_scale > 0 then
+        screen_width = screen_width / display_scale
+    end
+    frame.location = {
+        x = math.max(0, math.floor((screen_width - FORFEIT_DIALOG_WIDTH) / 2)),
+        y = FORFEIT_DIALOG_TOP_OFFSET
+    }
+end
+
+function Public.forfeit_impl.open_dialog(player, automatic, final_confirm, death_count)
+    if not (player and player.valid) then
+        return
+    end
+    local state = Public.forfeit_impl.state_from_player_force(player)
+    if not state then
+        player.print('Join a Multi-Team Support team before forfeiting Expanse.')
+        return
+    end
+    Public.forfeit_impl.destroy_dialog(player)
+    local frame = player.gui.screen.add({
+        type = 'frame',
+        name = forfeit_frame_name,
+        caption = {'expanse.forfeit_title'},
+        direction = 'vertical'
+    })
+    frame.style.minimal_width = FORFEIT_DIALOG_WIDTH
+    frame.style.maximal_width = FORFEIT_DIALOG_WIDTH
+    Public.forfeit_impl.position_dialog(player, frame)
+    local body = frame.add({
+        type = 'label',
+        caption = final_confirm and {'expanse.forfeit_final_body'} or (automatic and {'expanse.forfeit_auto_body', death_count or FORFEIT_DEATH_THRESHOLD} or {'expanse.forfeit_body'})
+    })
+    body.style.single_line = false
+    body.style.maximal_width = 440
+    body.style.bottom_margin = 8
+
+    local buttons = frame.add({ type = 'flow', direction = 'horizontal' })
+    buttons.style.horizontal_align = 'center'
+    buttons.style.horizontal_spacing = 8
+    buttons.add({
+        type = 'button',
+        name = final_confirm and forfeit_final_confirm_button_name or forfeit_confirm_button_name,
+        caption = final_confirm and {'expanse.forfeit_final_confirm'} or {'expanse.forfeit_confirm'},
+        style = 'confirm_button'
+    })
+    buttons.add({
+        type = 'button',
+        name = forfeit_cancel_button_name,
+        caption = {'expanse.forfeit_cancel'}
+    })
+    player.opened = frame
+end
+
+function Public.forfeit_impl.inventory_item_count(inventory)
+    local count = 0
+    if not (inventory and inventory.valid) then
+        return count
+    end
+    for _, item in pairs(inventory.get_contents()) do
+        count = count + (item.count or 0)
+    end
+    return count
+end
+
+function Public.forfeit_impl.clear_player_inventory(player)
+    if not (player and player.valid) then
+        return 0
+    end
+
+    pcall(function()
+        if player.crafting_queue_size and player.crafting_queue_size > 0 then
+            player.cancel_crafting({ index = 1, count = player.crafting_queue_size })
+        end
+    end)
+    pcall(function() player.clear_cursor() end)
+
+    local removed = 0
+    local inventory_ids = {
+        defines.inventory.character_main,
+        defines.inventory.character_guns,
+        defines.inventory.character_ammo,
+        defines.inventory.character_armor,
+        defines.inventory.character_trash,
+        defines.inventory.god_main,
+        defines.inventory.editor_main
+    }
+    for _, inventory_id in pairs(inventory_ids) do
+        if inventory_id then
+            local ok, inventory = pcall(function() return player.get_inventory(inventory_id) end)
+            if ok and inventory and inventory.valid then
+                removed = removed + Public.forfeit_impl.inventory_item_count(inventory)
+                inventory.clear()
+            end
+        end
+    end
+    return removed
+end
+
+function Public.forfeit_impl.clear_force_player_inventories(force)
+    local removed = 0
+    for _, player in pairs(force and force.players or {}) do
+        removed = removed + Public.forfeit_impl.clear_player_inventory(player)
+    end
+    return removed
+end
+
+function Public.forfeit_impl.destroy_force_corpses(surface, force)
+    if not (surface and surface.valid and force and force.valid) then
+        return 0
+    end
+    local removed = 0
+    for _, corpse in pairs(surface.find_entities_filtered({ type = 'character-corpse' })) do
+        local belongs_to_force = corpse.force and corpse.force.valid and corpse.force.name == force.name
+        local ok, player_index = pcall(function() return corpse.character_corpse_player_index end)
+        if ok and player_index then
+            local player = game.get_player(player_index)
+            belongs_to_force = player and player.valid and player.force and player.force.name == force.name
+        end
+        if belongs_to_force and corpse.valid then
+            corpse.destroy()
+            removed = removed + 1
+        end
+    end
+    return removed
+end
+
+function Public.forfeit_impl.destroy_ground_items(surface)
+    if not (surface and surface.valid) then
+        return 0
+    end
+    local removed = 0
+    for _, item in pairs(surface.find_entities_filtered({ type = 'item-entity' })) do
+        if item.valid then
+            item.destroy()
+            removed = removed + 1
+        end
+    end
+    return removed
+end
+
+function Public.forfeit_impl.destroy_enemy_attack_entities(surface)
+    if not (surface and surface.valid) then
+        return 0
+    end
+    local removed = 0
+    for _, entity in pairs(surface.find_entities_filtered({
+        force = 'enemy',
+        type = { 'unit', 'turret', 'unit-spawner' }
+    })) do
+        if entity.valid then
+            entity.destroy()
+            removed = removed + 1
+        end
+    end
+    return removed
+end
+
+function Public.forfeit_impl.is_preserved_force_entity(state, entity)
+    if not (entity and entity.valid) then
+        return true
+    end
+    if entity.type == 'character' then
+        return true
+    end
+    if state.landing_pad and state.landing_pad.valid and entity == state.landing_pad then
+        return true
+    end
+    for _, silo in pairs(state.rocket_silos or {}) do
+        if silo.entity and silo.entity.valid and entity == silo.entity then
+            return true
+        end
+    end
+    return false
+end
+
+function Public.forfeit_impl.destroy_force_buildings(surface, force, state)
+    if not (surface and surface.valid and force and force.valid) then
+        return 0
+    end
+    local removed = 0
+    for _, entity in pairs(surface.find_entities_filtered({ force = force })) do
+        if entity.valid and not Public.forfeit_impl.is_preserved_force_entity(state, entity) then
+            pcall(function()
+                entity.destroy()
+                removed = removed + 1
+            end)
+        end
+    end
+    return removed
+end
+
+function Public.forfeit_impl.clear_invasion_state(state)
+    for _, candidate in pairs(state.invasion_candidates or {}) do
+        if candidate.render and candidate.render.valid then
+            candidate.render.destroy()
+        end
+    end
+
+    local kept_schedule = {}
+    for _, stuff in pairs(state.schedule or {}) do
+        if not is_invasion_schedule_event(stuff) then
+            kept_schedule[#kept_schedule + 1] = stuff
+        end
+    end
+    state.schedule = kept_schedule
+    state.invasion_candidates = {}
+    state.invasion_candidate_cells = {}
+    state.invasion_tracker = {
+        pending = 0,
+        required = 0,
+        groups = 0,
+        last_forfeit_tick = game.tick
+    }
+    state.cell_biter_units = {}
+    state.cell_biter_tracker = {
+        last_forfeit_tick = game.tick
+    }
+end
+
+function Public.forfeit_impl.clear_deaths_for_force(force_name)
+    for player_index, entry in pairs(expanse.forfeit_player_deaths or {}) do
+        if entry.force_name == force_name then
+            expanse.forfeit_player_deaths[player_index] = nil
+        end
+    end
+end
+
+function Public.forfeit_impl.place_force_players_at_spawn(state, surface, force)
+    local moved = 0
+    local spawn = force.get_spawn_position(surface)
+    for _, player in pairs(force.players or {}) do
+        if player.valid and player.connected then
+            pcall(function()
+                if player.driving then
+                    player.driving = false
+                end
+            end)
+            place_player_on_expanse_surface(player, surface, spawn)
+            Public.forfeit_impl.clear_player_inventory(player)
+            create_button(player)
+            moved = moved + 1
+        end
+    end
+    return moved
+end
+
+function Public.forfeit_impl.cleanup_state(state)
+    state.hungry_scan_keys = nil
+    state.hungry_scan_index = nil
+    state.hungry_scan_live_containers = nil
+    state.acid_tank = nil
+    for unit_number, silo in pairs(state.rocket_silos or {}) do
+        if not (silo.entity and silo.entity.valid) then
+            state.rocket_silos[unit_number] = nil
+        end
+    end
+    if state.landing_pad and not state.landing_pad.valid then
+        state.landing_pad = nil
+    end
+    if SpaceMissions.enabled() then
+        SpaceMissions.ensure_support(state)
+    end
+end
+
+function Public.forfeit_impl.run(state, player)
+    if not state then
+        return nil, 'missing state'
+    end
+    ensure_state_ready(state)
+    local surface = state.active_surface_index and game.surfaces[state.active_surface_index] or nil
+    local force = state_force(state)
+    if not (surface and surface.valid and force and force.valid) then
+        return nil, 'missing surface or force'
+    end
+
+    Public.forfeit_impl.clear_invasion_state(state)
+    local counts = {
+        enemies = Public.forfeit_impl.destroy_enemy_attack_entities(surface),
+        corpses = Public.forfeit_impl.destroy_force_corpses(surface, force),
+        ground_items = Public.forfeit_impl.destroy_ground_items(surface),
+        inventory_items = Public.forfeit_impl.clear_force_player_inventories(force),
+        buildings = 0,
+        players_moved = 0
+    }
+    counts.players_moved = Public.forfeit_impl.place_force_players_at_spawn(state, surface, force)
+    counts.buildings = Public.forfeit_impl.destroy_force_buildings(surface, force, state)
+    Public.forfeit_impl.cleanup_state(state)
+    Functions.ensure_frontier_chests(state)
+
+    state.forfeit_count = (state.forfeit_count or 0) + 1
+    state.last_forfeit = {
+        tick = game.tick,
+        player = player and player.valid and player.name or nil,
+        counts = table.deepcopy(counts),
+        size = state.size,
+        surface = surface.name
+    }
+    state.forfeit_history[#state.forfeit_history + 1] = state.last_forfeit
+    if #state.forfeit_history > 10 then
+        table.remove(state.forfeit_history, 1)
+    end
+    Public.forfeit_impl.clear_deaths_for_force(state_key(state))
+
+    game.print({'expanse.forfeit_done', player and player.valid and player.name or 'Server', counts.buildings, counts.enemies, counts.inventory_items, force.name}, { r = 0.4, g = 0.85, b = 1 })
+    script.raise_event(expanse.events.gui_update, { force_name = state_key(state) })
+    if SpaceMissions.enabled() then
+        script.raise_event(expanse.events.mission_gui_update, { force_name = state_key(state) })
+    end
+    return counts
+end
+
+function Public.forfeit_impl.enemy_caused_death(event)
+    local cause = event and event.cause
+    return cause and cause.valid and cause.force and cause.force.valid and cause.force.name == 'enemy'
+end
+
+function Public.forfeit_impl.on_player_died(event)
+    local player = game.get_player(event.player_index)
+    if not (player and player.valid) then
+        return
+    end
+    local state = Public.forfeit_impl.state_from_player_force(player)
+    if not state or not Public.forfeit_impl.enemy_caused_death(event) then
+        return
+    end
+    ensure_indexes()
+    local key = player.index
+    local entry = expanse.forfeit_player_deaths[key]
+    if not entry or entry.force_name ~= state_key(state) or game.tick - (entry.last_tick or 0) > FORFEIT_DEATH_WINDOW_TICKS then
+        entry = { count = 0, force_name = state_key(state) }
+    end
+    entry.count = entry.count + 1
+    entry.last_tick = game.tick
+    expanse.forfeit_player_deaths[key] = entry
+
+    if entry.count >= FORFEIT_DEATH_THRESHOLD then
+        Public.forfeit_impl.open_dialog(player, true, false, entry.count)
+        entry.last_prompt_tick = game.tick
+    end
+end
+
 local function count_scheduled_invasion_events(state)
     local count = 0
     local next_tick = nil
@@ -1336,6 +1732,10 @@ local function on_gui_opened(event)
 end
 
 local function on_gui_closed(event)
+    if event.element and event.element.valid and event.element.name == forfeit_frame_name then
+        event.element.destroy()
+        return
+    end
     container_opened(event)
 end
 
@@ -2361,6 +2761,29 @@ local function on_gui_click(event)
     local name = element.name
     local player = game.players[event.player_index]
 
+    if name == forfeit_button_name then
+        Public.forfeit_impl.open_dialog(player, false)
+        return
+    end
+    if name == forfeit_cancel_button_name then
+        Public.forfeit_impl.destroy_dialog(player)
+        return
+    end
+    if name == forfeit_confirm_button_name then
+        Public.forfeit_impl.open_dialog(player, false, true)
+        return
+    end
+    if name == forfeit_final_confirm_button_name then
+        local state = Public.forfeit_impl.state_from_player_force(player)
+        Public.forfeit_impl.destroy_dialog(player)
+        if state then
+            Public.forfeit_impl.run(state, player)
+        else
+            player.print('Join a Multi-Team Support team before forfeiting Expanse.')
+        end
+        return
+    end
+
     if name == main_button_name or name == close_main_frame_button_name then
         if player.gui.screen[main_frame_name] then
             player.gui.screen[main_frame_name].destroy()
@@ -2612,6 +3035,48 @@ commands.add_command(
 		end
 	)
 
+function Public.forfeit_impl.command(event)
+    local player = event and event.player_index and game.get_player(event.player_index) or nil
+    local args = parse_admin_args(event.parameter)
+    local state
+
+    if player and player.valid then
+        if args[1] and is_team_force_name(args[1]) then
+            if not player.admin then
+                player.print('You are not an admin!')
+                return
+            end
+            if args[2] ~= 'confirm' then
+                player.print('Usage: /expanse-forfeit confirm or /expanse-forfeit team-N confirm')
+                return
+            end
+            state = state_from_force_name(args[1])
+        else
+            state = Public.forfeit_impl.state_from_player_force(player)
+            if args[1] ~= 'confirm' then
+                Public.forfeit_impl.open_dialog(player, false)
+                return
+            end
+        end
+    else
+        state = state_from_force_name(args[1] or DEFAULT_FORCE_NAME)
+    end
+
+    if state then
+        Public.forfeit_impl.run(state, player)
+    elseif player and player.valid then
+        player.print('Join a Multi-Team Support team before forfeiting Expanse.')
+    else
+        log('[mts-expanse] forfeit failed: missing Expanse state')
+    end
+end
+
+commands.add_command(
+    'expanse-forfeit',
+    'Forfeit: clears all team items and buildings and removes enemies. Research progress and the map are kept. Use /expanse-forfeit confirm to run.',
+    Public.forfeit_impl.command
+)
+
 commands.add_command(
     'expanse-open',
     'Admin: opens Expanse cells around your current position. Usage: /expanse-open [radius]',
@@ -2729,6 +3194,15 @@ commands.add_command(
 	    map_reset({ force_name = state_key(state) })
 	    return true
 	end
+
+    function Public.forfeit(force_name)
+        local state = force_name and state_from_force_name(force_name) or expanse
+        local counts, err = Public.forfeit_impl.run(state)
+        if not counts then
+            return false, err
+        end
+        return true
+    end
 
     local function first_admin_open_target(state)
         for unit_number, container in pairs(state.containers or {}) do
@@ -3532,6 +4006,69 @@ commands.add_command(
         return count
     end
 
+    function Public.probe_forfeit(force_name)
+        local state = force_name and state_from_force_name(force_name) or expanse
+        ensure_state_ready(state)
+        local surface = state.active_surface_index and game.surfaces[state.active_surface_index] or nil
+        local force = state_force(state)
+        if not (surface and surface.valid and force and force.valid) then
+            return { ok = false, error = 'missing surface or force', force_name = state_key(state) }
+        end
+
+        local before_size = state.size
+        local before_surface_index = surface.index
+        local tech = force.technologies['logistics'] or force.technologies['automation-2']
+        if tech then
+            tech.researched = true
+        end
+
+        local center = { x = math.floor((state.square_size or 15) * 0.5), y = math.floor((state.square_size or 15) * 0.5) }
+        local building_position = surface.find_non_colliding_position('wooden-chest', { x = center.x + 3, y = center.y }, 10, 0.5) or { x = center.x + 3, y = center.y }
+        local building = surface.create_entity({ name = 'wooden-chest', position = building_position, force = force })
+        if building and building.valid then
+            local inventory = building.get_inventory(defines.inventory.chest)
+            if inventory then
+                inventory.insert({ name = 'iron-plate', count = 25 })
+            end
+        end
+
+        local biter_position = surface.find_non_colliding_position('small-biter', { x = center.x + 5, y = center.y + 3 }, 10, 0.5) or { x = center.x + 5, y = center.y + 3 }
+        local biter = surface.create_entity({ name = 'small-biter', position = biter_position, force = 'enemy' })
+        surface.spill_item_stack({ position = { x = center.x + 1, y = center.y + 1 }, stack = { name = 'copper-plate', count = 10 }, enable_looted = false, allow_belts = false })
+
+        local counts, err = Public.forfeit_impl.run(state)
+        local after_surface = state.active_surface_index and game.surfaces[state.active_surface_index] or nil
+        local enemy_count = after_surface and after_surface.count_entities_filtered({ force = 'enemy', type = { 'unit', 'turret', 'unit-spawner' } }) or -1
+        local ground_items = after_surface and after_surface.count_entities_filtered({ type = 'item-entity' }) or -1
+        local chest_count = after_surface and after_surface.count_entities_filtered({ name = 'requester-chest', force = 'neutral' }) or -1
+
+        return {
+            ok = counts ~= nil
+                and err == nil
+                and state.size == before_size
+                and state.active_surface_index == before_surface_index
+                and (not tech or tech.researched == true)
+                and (not building or not building.valid)
+                and (not biter or not biter.valid)
+                and enemy_count == 0
+                and ground_items == 0
+                and chest_count > 0,
+            error = err,
+            force_name = state_key(state),
+            surface_name = after_surface and after_surface.name or nil,
+            before_size = before_size,
+            after_size = state.size,
+            same_surface = state.active_surface_index == before_surface_index,
+            tech_preserved = not tech or tech.researched == true,
+            building_removed = not building or not building.valid,
+            biter_removed = not biter or not biter.valid,
+            enemy_count = enemy_count,
+            ground_items = ground_items,
+            chest_count = chest_count,
+            counts = counts
+        }
+    end
+
     local invasion_probe_config_keys = {
         'invasion_enabled',
         'sync_invasions',
@@ -4135,6 +4672,14 @@ commands.add_command(
             last_mts_nauvis_cleanup_deleted = state.last_mts_nauvis_cleanup_deleted,
             last_mts_nauvis_cleanup_error = state.last_mts_nauvis_cleanup_error,
             cleaned_mts_nauvis_surfaces = shallow_copy(state.cleaned_mts_nauvis_surfaces),
+            forfeit_count = state.forfeit_count or 0,
+            last_forfeit = state.last_forfeit and {
+                tick = state.last_forfeit.tick,
+                player = state.last_forfeit.player,
+                counts = shallow_copy(state.last_forfeit.counts),
+                size = state.last_forfeit.size,
+                surface = state.last_forfeit.surface
+            } or nil,
 	        mission_levels = SpaceMissions.enabled() and mission_levels or nil
 	    }
     end
@@ -4170,6 +4715,7 @@ Event.add(defines.events.on_gui_closed, on_gui_closed)
 Event.add(defines.events.on_gui_opened, on_gui_opened)
 Event.add(defines.events.on_gui_click, on_gui_click)
 Event.add(defines.events.on_player_joined_game, on_player_joined_game)
+Event.add(defines.events.on_player_died, Public.forfeit_impl.on_player_died)
 Event.add(defines.events.on_pre_player_left_game, on_pre_player_left_game)
 Event.add(defines.events.on_pre_player_mined_item, infini_resource)
 Event.add(defines.events.on_robot_pre_mined, infini_resource)
