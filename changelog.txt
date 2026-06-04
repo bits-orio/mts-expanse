@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.11
+Date: 04. 06. 2026
+  Bugfixes:
+    - Fixed stale Multi-Team Support pending teleports for disconnected players aborting the
+      Expanse update tick, which could freeze hungry chest scans, invasion tracking, and GUI
+      counters on existing saves.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.10
 Date: 01. 06. 2026
   Bugfixes:
