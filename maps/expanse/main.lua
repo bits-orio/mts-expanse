@@ -229,12 +229,23 @@ local function place_player_on_expanse_surface(player, surface, position)
         return player.teleport(target, surface)
     end
 
+    if not player.connected then
+        return false
+    end
+
     if player.controller_type ~= defines.controllers.god then
         player.set_controller({ type = defines.controllers.god })
     end
     player.teleport(target, surface)
 
-    if not player.create_character() then
+    local ok, created = pcall(function()
+        return player.create_character()
+    end)
+    if not ok then
+        log('[mts-expanse] failed to create character for ' .. player.name .. ' on ' .. surface.name .. ': ' .. tostring(created))
+        return false
+    end
+    if not created then
         log('[mts-expanse] failed to create character for ' .. player.name .. ' on ' .. surface.name)
         return false
     end
@@ -2090,7 +2101,7 @@ end
 -- surface here means MTS spawns the player straight onto the Expanse world (no flash).
 local function on_mts_player_joined_team(event)
     local player = game.get_player(event.player_index)
-    if not (player and player.valid) then
+    if not (player and player.valid and player.connected) then
         return
     end
     local force_name = event.force_name
@@ -2289,7 +2300,7 @@ local function process_pending_player_teleports()
     for player_index, pending in pairs(expanse.pending_player_teleports) do
         if game.tick >= pending.tick then
             local player = game.get_player(player_index)
-            local state = player and player.valid and state_from_player(player) or nil
+            local state = player and player.valid and player.connected and state_from_player(player) or nil
             if state and state_key(state) == pending.force_name then
                 ensure_state_ready(state)
                 local surface = game.surfaces[state.active_surface_index]
