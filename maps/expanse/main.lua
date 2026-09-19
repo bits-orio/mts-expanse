@@ -4699,6 +4699,67 @@ commands.add_command(
         return SpaceMissions.probe_rocket_delivery(state_from_force_name(force_name or DEFAULT_FORCE_NAME))
     end
 
+    function Public.probe_tier4_progression(force_name)
+        local force = game.forces[force_name or DEFAULT_FORCE_NAME]
+        local surface = game.create_surface('expanse-tier4-probe-' .. force.name, {
+            width = 128, height = 128,
+            autoplace_settings = {
+                entity = { treat_missing_as_default = false },
+                decorative = { treat_missing_as_default = false }
+            }
+        })
+        surface.request_to_generate_chunks({0, 0}, 2)
+        surface.force_generate_chunk_requests()
+        local tiles = {}
+        for x = -64, 63 do
+            for y = -64, 63 do
+                tiles[#tiles + 1] = { name = 'grass-1', position = {x, y} }
+            end
+        end
+        surface.set_tiles(tiles)
+        local recipe = force.recipes['cargo-landing-pad']
+        local recipe_enabled = recipe and recipe.enabled
+        local ok, failure = pcall(function()
+            -- Both the normal guaranteed-placement threshold and a pre-fix save
+            -- stuck on oil must advance without resetting any progression.
+            for _, repeats in ipairs({19, 89}) do
+                for _, entity in pairs(surface.find_entities()) do entity.destroy() end
+                local remaining = SA and 3 or 1
+                local state = {
+                    force_name = force.name, square_size = 15, rocket_silos = {},
+                    tiered_specials = { [4] = { unlocks = remaining, tiles = repeats } }
+                }
+                -- A cell with no room must preserve its pending unlock.
+                SpaceMissions.place_special_tiered_object(state, 4, surface, {x = 200, y = 200}, 4)
+                assert(state.tiered_specials[4].unlocks == remaining, 'blocked cell consumed tier-4 unlock')
+                for step = 1, remaining do
+                    SpaceMissions.place_special_tiered_object(state, 4, surface, {x = -45 + step * 20, y = 0}, 4)
+                    assert(state.tiered_specials[4].unlocks == remaining - step,
+                        'tier-4 progression stuck after step ' .. step .. ' with repeats=' .. repeats)
+                    if step == 1 then
+                        assert(surface.count_entities_filtered{name = 'crude-oil'} > 0, 'oil missing')
+                    elseif step == 2 then
+                        assert(state.landing_pad and state.landing_pad.valid, 'landing pad missing')
+                        assert(state.landing_pad.force == force, 'landing pad belongs to wrong team')
+                    end
+                end
+                local silo_count = 0
+                for _, data in pairs(state.rocket_silos) do
+                    assert(data.tier == 4 and data.entity.valid and data.entity.force == force, 'wrong mission silo')
+                    assert(not data.entity.minable_flag and not data.entity.destructible, 'unprotected mission silo')
+                    silo_count = silo_count + 1
+                end
+                assert(silo_count == (SA and 1 or 0), 'wrong registered silo count')
+                SpaceMissions.place_special_tiered_object(state, 4, surface, {x = 35, y = 0}, 4)
+                assert(surface.count_entities_filtered{name = 'rocket-silo'} == silo_count, 'duplicate silo')
+                assert(surface.count_entities_filtered{name = 'cargo-landing-pad'} == (SA and 1 or 0), 'wrong pad count')
+            end
+        end)
+        if recipe then recipe.enabled = recipe_enabled end
+        game.delete_surface(surface)
+        return { ok = ok, error = ok and nil or tostring(failure), mode = Mode.current() }
+    end
+
 	function Public.get_state(force_name)
         if force_name then
             return state_summary(state_from_force_name(force_name))

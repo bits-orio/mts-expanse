@@ -1,4 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.12
+Date: 18. 09. 2026
+  Bugfixes:
+    - Fixed Space Age tier-4 specials getting stuck generating oil, preventing discovery of the
+      cargo landing pad and tier-4 rocket silo even when tier-5 through tier-9 silos were found.
+      Existing saves resume the oil, landing pad, and silo sequence as more tier-4 cells open.
+  Tests:
+    - Added headless tier-4 progression checks for standalone and MTS teams, including stuck-save
+      retry counts, blocked placement, force ownership, duplicate prevention, and vanilla oil.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.11
 Date: 04. 06. 2026
   Bugfixes:
