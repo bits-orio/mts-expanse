@@ -219,15 +219,6 @@ data:extend({
     },
     {
         type = 'int-setting',
-        name = 'mts-expanse-map-reset-delay-ticks',
-        setting_type = 'runtime-global',
-        default_value = 7200,
-        minimum_value = 1,
-        maximum_value = 216000,
-        order = 'e-i'
-    },
-    {
-        type = 'int-setting',
         name = 'mts-expanse-space-production-interval-ticks',
         setting_type = 'runtime-global',
         default_value = 3600,

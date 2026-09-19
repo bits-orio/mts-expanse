@@ -129,7 +129,6 @@ local function expanse_config()
         enemy_evolution_destroy_factor = global_setting('mts-expanse-enemy-evolution-destroy-factor', 0.003),
         enemy_evolution_pollution_factor = global_setting('mts-expanse-enemy-evolution-pollution-factor', 0.0000006),
         enemy_evolution_time_factor = global_setting('mts-expanse-enemy-evolution-time-factor', 0.000002),
-        map_reset_delay_ticks = global_setting('mts-expanse-map-reset-delay-ticks', 7200),
         space_production_interval_ticks = global_setting('mts-expanse-space-production-interval-ticks', 3600),
         invasion_enabled = global_setting('mts-expanse-invasion-enabled', true),
         sync_invasions = global_setting('mts-expanse-sync-invasions', true),
@@ -352,7 +351,6 @@ local function init_state_defaults(state, force_name)
     state.tier10_special_chance = config.tier10_special_chance
     state.sync_cell_content = config.sync_cell_content
     state.map_starting_area = config.map_starting_area
-    state.map_reset_delay_ticks = config.map_reset_delay_ticks
     state.space_production_interval_ticks = config.space_production_interval_ticks
     state.invasion_enabled = config.invasion_enabled
     state.sync_invasions = config.sync_invasions
@@ -907,6 +905,7 @@ reset = function(state)
     state.cell_biter_tracker = {}
     state.lightning_tiles = {}
     state.schedule = {}
+    state.victory_tick = nil
     state.size = 1
     state.reset_tick = game.tick
     state.tree = nil
@@ -2253,6 +2252,16 @@ local function on_configuration_changed(_event)
         create_button(player)
     end
     for _, state in iter_states() do
+        -- Older releases queued an automatic map reset after victory. Cancel
+        -- those saved timers on upgrade while preserving unrelated events.
+        local schedule = {}
+        for _, entry in pairs(state.schedule or {}) do
+            if entry.event ~= 'map_reset' then
+                schedule[#schedule + 1] = entry
+            end
+        end
+        state.schedule = schedule
+        state.map_reset_delay_ticks = nil
         if SpaceMissions.enabled() then
             SpaceMissions.ensure_support(state)
         else
@@ -2286,11 +2295,12 @@ end
 
 local function victory(event)
     local state = state_from_event(event)
+    if state.victory_tick then return end
+    state.victory_tick = game.tick
     state_print(state, {'expanse.script-victory'})
     for _, player in pairs(state_players(state)) do
         player.play_sound { path = 'utility/game_won', volume_modifier = 0.9 }
     end
-    table.insert(state.schedule, { tick = game.tick + state.map_reset_delay_ticks, event = 'map_reset', parameters = { force_name = state_key(state) } })
 end
 
 local function process_pending_player_teleports()
@@ -4666,6 +4676,7 @@ commands.add_command(
 	        space_age = SA and true or false,
             space_missions_enabled = SpaceMissions.enabled(),
             mission_support_mode = SpaceMissions.support_mode(state),
+            victory_tick = state.victory_tick,
             space_platform_enabled = SpaceMissions.enabled() and SpaceMissions.uses_space_platform(state) or false,
             settings = expanse_config(),
             last_hungry_scan_tick = state.last_hungry_scan_tick,

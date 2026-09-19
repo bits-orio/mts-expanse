@@ -168,6 +168,19 @@ mts-expanse-cleanup-mts-nauvis=false
 
 ## Publishing
 
+Before releases that change mission rewards or victory, run:
+
+```bash
+python3 scripts/test-victory.py
+```
+
+This uses disposable Factorio profiles to test one-time rewards, final mission
+completion, continued production and factory preservation beyond the old reset
+deadline, and upgrades with already queued victory resets. It covers standalone,
+MTS, NonOrbit, orbit-platform, and vanilla configurations. Set `PREVIOUS_MOD_ZIP`
+to the published `mts-expanse_0.1.12.zip` and `MTS_MOD_ZIP` to the desired official
+Multi-Team Support ZIP if they are not in the script's default locations.
+
 Use the existing publish script for Mod Portal uploads:
 
 ```bash
