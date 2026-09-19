@@ -63,13 +63,13 @@ open limits.
 Most servers can start with the defaults. Competitive MTS servers usually want
 to keep synchronized cell content and synchronized invasions enabled.
 
-Starting in 0.1.14, the default time evolution factor is `0.0000007086`. From zero,
+Starting in 0.1.14, the default time evolution factor is `0.0000007`. From zero,
 time alone reaches about 30% evolution after seven running game days, compared
 with 54.7% at the previous default of `0.000002`. Pollution and nest-kill evolution
 remain unchanged and add to the total; 30% is not a cap.
 
 Existing saves keep their stored settings. To use the new rate in a current game,
-an admin can set **Time evolution factor** to `0.0000007086` under
+an admin can set **Time evolution factor** to `0.0000007` under
 **Settings > Mod settings > Map**. It applies immediately without resetting
 accumulated evolution. See the [default evolution comparison](docs/evolution-defaults.md).
 

@@ -129,7 +129,7 @@ local function expanse_config()
         enemy_evolution_destroy_factor = global_setting('mts-expanse-enemy-evolution-destroy-factor', 0.003),
         enemy_evolution_pollution_factor = global_setting('mts-expanse-enemy-evolution-pollution-factor', 0.0000006),
         -- Match settings.lua: roughly 30% time-only evolution after 7 running days from zero.
-        enemy_evolution_time_factor = global_setting('mts-expanse-enemy-evolution-time-factor', 0.0000007086),
+        enemy_evolution_time_factor = global_setting('mts-expanse-enemy-evolution-time-factor', 0.0000007),
         space_production_interval_ticks = global_setting('mts-expanse-space-production-interval-ticks', 3600),
         invasion_enabled = global_setting('mts-expanse-invasion-enabled', true),
         sync_invasions = global_setting('mts-expanse-sync-invasions', true),
