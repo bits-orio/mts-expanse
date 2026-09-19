@@ -18,6 +18,13 @@ Run the MTS compatibility probe against the latest official installed
 scripts/test-mts.sh
 ```
 
+Run the focused forfeit cleanup regressions (hungry chest inventories, real
+character crafting queues, refund spills, and cross-surface isolation):
+
+```bash
+python3 scripts/test-forfeit.py
+```
+
 Use a specific official MTS zip when needed:
 
 ```bash
