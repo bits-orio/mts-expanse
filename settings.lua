@@ -212,10 +212,10 @@ data:extend({
         type = 'double-setting',
         name = 'mts-expanse-enemy-evolution-time-factor',
         setting_type = 'runtime-global',
-        -- Time alone reaches approximately 0.30 evolution from zero after 7 running days.
-        -- Rounded from 0.30 / (1 - 0.30) / (7 * 86400); the resulting seven-day value is 0.2974.
+        -- Time alone reaches approximately 0.2322 evolution from zero after 7 running days.
+        -- Factorio curve: evolution = (rate * seconds) / (1 + rate * seconds).
         -- Pollution and nest kills contribute separately; this is not a total evolution cap.
-        default_value = 0.0000007,
+        default_value = 0.0000005,
         minimum_value = 0,
         maximum_value = 1,
         order = 'e-h'
