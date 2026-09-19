@@ -1335,11 +1335,14 @@ function Public.forfeit_impl.clear_player_inventory(player)
         return 0
     end
 
-    pcall(function()
-        if player.crafting_queue_size and player.crafting_queue_size > 0 then
-            player.cancel_crafting({ index = 1, count = player.crafting_queue_size })
-        end
-    end)
+    -- Queue length is not the craft count: one entry may hold hundreds of crafts.
+    -- Cancelling can also remove dependent recipes, so read the queue again each time.
+    local queue = player.crafting_queue
+    while queue and #queue > 0 do
+        local item = queue[#queue]
+        player.cancel_crafting({ index = item.index, count = item.count })
+        queue = player.crafting_queue
+    end
     pcall(function() player.clear_cursor() end)
 
     local removed = 0
@@ -1368,6 +1371,22 @@ function Public.forfeit_impl.clear_force_player_inventories(force)
     local removed = 0
     for _, player in pairs(force and force.players or {}) do
         removed = removed + Public.forfeit_impl.clear_player_inventory(player)
+    end
+    return removed
+end
+
+function Public.forfeit_impl.clear_hungry_chest_inventories(surface)
+    local removed = 0
+    -- Hungry chests are neutral, so deleting the team's buildings cannot clear
+    -- their storage. Keep the entities and offer state, including paid progress.
+    for _, chest in pairs(surface.find_entities_filtered({ name = 'requester-chest', force = 'neutral' })) do
+        for _, id in ipairs({ defines.inventory.chest, defines.inventory.logistic_container_trash }) do
+            local inventory = chest.get_inventory(id)
+            if inventory and inventory.valid then
+                removed = removed + Public.forfeit_impl.inventory_item_count(inventory)
+                inventory.clear()
+            end
+        end
     end
     return removed
 end
@@ -1545,13 +1564,18 @@ function Public.forfeit_impl.run(state, player)
     local counts = {
         enemies = Public.forfeit_impl.destroy_enemy_attack_entities(surface),
         corpses = Public.forfeit_impl.destroy_force_corpses(surface, force),
-        ground_items = Public.forfeit_impl.destroy_ground_items(surface),
+        ground_items = 0,
         inventory_items = Public.forfeit_impl.clear_force_player_inventories(force),
+        chest_items = Public.forfeit_impl.clear_hungry_chest_inventories(surface),
         buildings = 0,
         players_moved = 0
     }
     counts.players_moved = Public.forfeit_impl.place_force_players_at_spawn(state, surface, force)
     counts.buildings = Public.forfeit_impl.destroy_force_buildings(surface, force, state)
+    counts.inventory_items = counts.inventory_items + counts.chest_items
+    -- Cancelling crafts or clearing the cursor can spill refunded items when
+    -- inventories are full. Sweep after player cleanup so they cannot be recovered.
+    counts.ground_items = Public.forfeit_impl.destroy_ground_items(surface)
     Public.forfeit_impl.cleanup_state(state)
     Functions.ensure_frontier_chests(state)
 

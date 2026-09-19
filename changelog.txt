@@ -1,4 +1,15 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.15
+Date: 19. 09. 2026
+  Bugfixes:
+    - Team forfeit now clears items from Expanse hungry chests, including their trash inventories,
+      while preserving the chests, offers, and already-paid expansion progress.
+    - Team forfeit now cancels every queued craft, including large batches and prerequisite recipes,
+      and removes refunded ingredients from inventories and the ground.
+  Tests:
+    - Added headless forfeit regressions for vanilla, Space Age, and MTS, including quality items,
+      real character crafting queues, overflowing refunds, and isolation from other surfaces.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.14
 Date: 19. 09. 2026
   Changes:
