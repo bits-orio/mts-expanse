@@ -991,7 +991,7 @@ local function upgrade_mission_level(expanse, tier)
         elseif type == 'once' then
             local hub = mission_hub(expanse)
             if not (hub and hub.valid) then return end
-            local inventory = mission_hub_inventory(hub)
+            local inventory = mission_hub_inventory(expanse, hub)
             if not inventory then return end
             for item, count in pairs(reward) do
                 local name, quality = Public.split_key(item)

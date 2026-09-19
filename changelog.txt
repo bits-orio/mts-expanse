@@ -1,4 +1,17 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.13
+Date: 18. 09. 2026
+  Bugfixes:
+    - Fixed one-time mission rewards failing to reach the mission hub, which could leave completed
+      missions stuck at their current level. Applies to NonOrbit and orbit platform support.
+    - Cancelled automatic victory resets already queued in existing saves when upgrading.
+  Changes:
+    - Victory now announces completion and lets the factory continue running. Removed the automatic
+      map reset and its delay setting; manual admin reset commands remain available.
+  Tests:
+    - Added headless reward and continued-play tests for standalone and MTS games with NonOrbit or
+      orbit platform support, plus vanilla and upgrades from 0.1.12 saves with pending resets.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.12
 Date: 18. 09. 2026
   Bugfixes:

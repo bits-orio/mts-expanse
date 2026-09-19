@@ -65,6 +65,9 @@ to keep synchronized cell content and synchronized invasions enabled.
 
 ## Admin Tools
 
+Completing the final Space Age mission announces victory and lets you keep playing.
+Your factory, research, and unlocked land are preserved, in standalone and MTS games.
+
 Admins can open nearby frontier cells for testing, moderation, or recovery:
 
 ```text
