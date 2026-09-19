@@ -1,4 +1,13 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.14
+Date: 19. 09. 2026
+  Changes:
+    - Reduced the default time evolution factor from 0.000002 to 0.0000007: time alone
+      now reaches approximately 30% evolution after seven running game days from zero,
+      compared with approximately 54.7% previously. Pollution and nest-kill factors are unchanged.
+    - Existing saves keep their stored settings. Admins can apply the new time factor through
+      Settings > Mod settings > Map; this changes future growth without resetting existing evolution.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.13
 Date: 18. 09. 2026
   Bugfixes:
