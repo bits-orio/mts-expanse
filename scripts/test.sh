@@ -400,6 +400,10 @@ local function assert_vanilla_rocket_gating()
 end
 
 local function assert_rocket_delivery()
+    local progression = remote.call('mts_expanse', 'probe_tier4_progression')
+    if not progression.ok then
+        error('tier-4 progression failed: ' .. tostring(progression.error))
+    end
     local expected_mode = script.active_mods['space-age'] and 'space-age' or 'vanilla'
     local expected_support = script.active_mods['space-age'] and 'space-age-surface-hub' or 'disabled'
     local probe = remote.call('mts_expanse', 'probe_rocket_delivery')

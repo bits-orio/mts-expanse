@@ -357,6 +357,10 @@ local function assert_mode(state, force_name)
 end
 
 local function assert_rocket_delivery(force_name)
+    local progression = remote.call('mts_expanse', 'probe_tier4_progression', force_name)
+    if not progression.ok then
+        fail(force_name .. ' tier-4 progression failed: ' .. tostring(progression.error))
+    end
     local probe = remote.call('mts_expanse', 'probe_rocket_delivery', force_name)
     if type(probe) ~= 'table' then fail(force_name .. ' rocket probe did not return a table') end
     local expected_mode = script.active_mods['space-age'] and 'space-age' or 'vanilla'

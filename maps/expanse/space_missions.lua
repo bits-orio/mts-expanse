@@ -345,6 +345,7 @@ local function tier4_object(expanse, surface, left_top, repeats)
                     surface.create_entity({name = 'crude-oil', position = pos, amount = 500000})
                 end
             end
+            return true
         elseif expanse.tiered_specials[4].unlocks == 2 then
             local force = state_force(expanse)
             local pad = surface.create_entity({name = 'cargo-landing-pad', position = position, force = force})

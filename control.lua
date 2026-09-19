@@ -97,6 +97,9 @@ remote.add_interface(
         probe_rocket_delivery = function (force_name)
             return Expanse.probe_rocket_delivery(force_name)
         end,
+        probe_tier4_progression = function (force_name)
+            return Expanse.probe_tier4_progression(force_name)
+        end,
         probe_vanilla_rocket_gating = function (force_name)
             return Expanse.probe_vanilla_rocket_gating(force_name)
         end,
