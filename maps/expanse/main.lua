@@ -68,6 +68,7 @@ local reset
 local destroy_natural_enemy_entities
 local FISH_BACKFILL_VERSION = '0.1.10-fish-v2'
 Public.forfeit_impl = {}
+Public.surface_impl = {}
 
 local function startup_setting(name, default)
     local setting = settings.startup[name]
@@ -322,6 +323,30 @@ local function state_support_surface_name(force_name)
     return 'NonOrbit'
 end
 
+-- Factorio reuses deleted surface indices. A live index alone is not proof that
+-- this is still the team's gameplay world (it may now be NonOrbit or another team).
+function Public.surface_impl.is_gameplay(state, surface)
+    if not (state and surface and surface.valid and state.surface_name) then return false end
+    if surface.name == state.nonspace_surface or surface.name == state.source_surface then return false end
+    local base = state.surface_name
+    return surface.name == base
+        or (surface.name:sub(1, #base) == base and surface.name:sub(#base + 1):match('^%d+$') ~= nil)
+end
+
+function Public.surface_impl.active(state)
+    local surface = state and state.active_surface_index and game.surfaces[state.active_surface_index]
+    return Public.surface_impl.is_gameplay(state, surface) and surface or nil
+end
+
+function Public.surface_impl.saved(state)
+    local name = state.surface_name
+    if state.reset_generation then
+        name = name .. state.reset_generation
+    end
+    local surface = game.surfaces[name] or game.surfaces[state.surface_name]
+    return Public.surface_impl.is_gameplay(state, surface) and surface or nil
+end
+
 local function init_state_defaults(state, force_name)
     local config = expanse_config()
     state.force_name = force_name or state.force_name or DEFAULT_FORCE_NAME
@@ -420,7 +445,7 @@ end
 
 local function state_matches_surface(state, surface)
     return state and surface and (
-        state.active_surface_index == surface.index or
+        Public.surface_impl.active(state) == surface or
         state.surface_name == surface.name or
         state.source_surface == surface.name or
         state.nonspace_surface == surface.name
@@ -536,8 +561,15 @@ end
 
 local function ensure_state_ready(state)
     init_state_defaults(state, state and state.force_name or DEFAULT_FORCE_NAME)
-    if not state.active_surface_index or not game.surfaces[state.active_surface_index] then
-        reset(state)
+    if not Public.surface_impl.active(state) then
+        local surface = Public.surface_impl.saved(state)
+        if surface then
+            -- Recover the pointer without resetting an existing factory or progress.
+            state.active_surface_index = surface.index
+            Public.surface_impl.destroy_overlay(state)
+        else
+            reset(state)
+        end
     end
     return state
 end
@@ -601,7 +633,7 @@ local function cleanup_mts_nauvis_surfaces(state)
         return 0
     end
 
-    local active_surface = state.active_surface_index and game.surfaces[state.active_surface_index] or nil
+    local active_surface = Public.surface_impl.active(state)
     if not (active_surface and active_surface.valid) then
         state.last_mts_nauvis_cleanup_error = 'missing active Expanse surface'
         schedule_mts_nauvis_cleanup(state, 60)
@@ -694,7 +726,7 @@ local function destroy_hungry_chests_for_cell(state, left_top)
 end
 
 local function clear_hungry_chests(state, area)
-    local surface = state and state.active_surface_index and game.surfaces[state.active_surface_index] or nil
+    local surface = Public.surface_impl.active(state)
     if not surface then
         return 0
     end
@@ -872,6 +904,7 @@ reset = function(state)
     ensure_indexes()
     init_state_defaults(state, state.force_name or DEFAULT_FORCE_NAME)
     apply_world_settings()
+    Public.surface_impl.destroy_overlay(state)
     local enemy = game.forces.enemy
     enemy.set_gun_speed_modifier('rocket', 2)
     enemy.set_gun_speed_modifier('bullet', 2)
@@ -952,7 +985,7 @@ reset = function(state)
         }
     }
     local force = state_force(state)
-    local surface = state.active_surface_index and game.surfaces[state.active_surface_index] or game.surfaces[state.surface_name]
+    local surface = Public.surface_impl.active(state) or Public.surface_impl.saved(state)
     if not surface then
         surface = game.create_surface(state.surface_name, map_gen_settings)
         state.active_surface_index = surface.index
@@ -1554,7 +1587,7 @@ function Public.forfeit_impl.run(state, player)
         return nil, 'missing state'
     end
     ensure_state_ready(state)
-    local surface = state.active_surface_index and game.surfaces[state.active_surface_index] or nil
+    local surface = Public.surface_impl.active(state)
     local force = state_force(state)
     if not (surface and surface.valid and force and force.valid) then
         return nil, 'missing surface or force'
@@ -1688,7 +1721,7 @@ local function expected_synced_invasion_candidate(state, expansion_position)
 end
 
 local function handle_completed_container(state, expansion_position, player)
-    local surface = game.surfaces[state.active_surface_index]
+    local surface = Public.surface_impl.active(state)
     if not surface or not surface.valid then return end
     local unlocker = 'The logistics network'
     if player and player.valid then
@@ -1897,6 +1930,8 @@ local function infini_rock(entity, state, mined)
 end
 
 local function infini_tree(state)
+    local surface = Public.surface_impl.active(state)
+    if not surface then return end
     local techs = state_force(state).technologies
     local trees = {
         ['tree-01'] = 1,
@@ -1922,7 +1957,6 @@ local function infini_tree(state)
         ['boompuff'] = (SA and techs['agriculture'].researched) and 2 or nil,
     }
     local a = math.floor(state.square_size * 0.5)
-    local surface = game.surfaces[state.active_surface_index]
     local position = {a - 4, a + 4}
 
     -- Roll the regrown tree deterministically by mine index so every team's Nth tree matches.
@@ -1971,7 +2005,7 @@ local function infini_resource2(event)
             end
         end
     end
-    if not state then
+    if not state or not Public.surface_impl.active(state) then
         return
     end
     if event.registration_number == state.tree then
@@ -2025,13 +2059,15 @@ end
 
 local function on_player_joined_game(event)
     local player = game.players[event.player_index]
-    local state = state_from_player(player)
-    if not state then
+    if is_mts_active() and not is_team_force_name(player.force.name) then
         create_button(player)
         return
     end
+    -- The viewed surface can belong to another team after spectating or a stale
+    -- spawn. Reconnect routing must use membership, not the current surface owner.
+    local state = state_from_force_name(player.force.name)
     ensure_state_ready(state)
-    local surface = game.surfaces[state.active_surface_index]
+    local surface = Public.surface_impl.active(state)
     local position
     if player.online_time == 0 then
         position = { state.square_size * 0.5, state.square_size * 0.5 }
@@ -2141,6 +2177,24 @@ local function on_mts_player_joined_team(event)
     schedule_mts_nauvis_cleanup(state, 180)
 end
 
+function Public.surface_impl.team_released(event)
+    local force_name = event.force_name
+    if not is_team_force_name(force_name) then return end
+    local state = expanse.team_states and expanse.team_states[force_name]
+    if state then Public.surface_impl.destroy_overlay(state) end
+    expanse.team_states[force_name] = nil
+    for surface_name, owner in pairs(expanse.surface_to_force or {}) do
+        if owner == force_name then expanse.surface_to_force[surface_name] = nil end
+    end
+    for registration, owner in pairs(expanse.object_to_force or {}) do
+        if owner == force_name then expanse.object_to_force[registration] = nil end
+    end
+    for player_index, pending in pairs(expanse.pending_player_teleports or {}) do
+        if pending.force_name == force_name then expanse.pending_player_teleports[player_index] = nil end
+    end
+    Public.forfeit_impl.clear_deaths_for_force(force_name)
+end
+
 -- Fill the Expanse tab in MTS's Team Settings panel with the Expanse player settings
 -- (SpectatorMode, bottom-button position, ...). Player settings only -- no Admin
 -- section and no blueprint toggle (MTS already owns blueprints). The requester-chest
@@ -2162,6 +2216,7 @@ end
 
 -- mts-v1 event name -> handler. Keys are the exact names passed to get_event_id.
 local MTS_EVENT_HANDLERS = {
+    on_team_released     = Public.surface_impl.team_released,
     on_welcome_tab_built  = on_mts_welcome_tab_built,
     on_player_joined_team = on_mts_player_joined_team,
     on_team_tab_built     = on_mts_team_tab_built,
@@ -2287,16 +2342,35 @@ local function on_configuration_changed(_event)
         end
         state.schedule = schedule
         state.map_reset_delay_ticks = nil
-        if SpaceMissions.enabled() then
-            SpaceMissions.ensure_support(state)
-        else
-            SpaceMissions.reset_space(state)
+        if not Public.surface_impl.active(state) then
+            Public.surface_impl.destroy_overlay(state)
+            local force = game.forces[state_key(state)]
+            if Public.surface_impl.saved(state) or (force and #force.players > 0) then
+                -- Repair occupied teams already affected by surface-index reuse.
+                -- reset() only creates a new starting map when the old world is gone.
+                ensure_state_ready(state)
+                for _, player in pairs(force and force.players or {}) do
+                    if player.valid and player.connected then
+                        expanse.pending_player_teleports[player.index] = {
+                            force_name = state_key(state), tick = game.tick + 5
+                        }
+                    end
+                end
+                log('[mts-expanse] repaired gameplay surface for ' .. state_key(state))
+            else
+                state.active_surface_index = nil
+            end
         end
-        if state.active_surface_index and game.surfaces[state.active_surface_index] then
+        if Public.surface_impl.active(state) then
+            if SpaceMissions.enabled() then
+                SpaceMissions.ensure_support(state)
+            else
+                SpaceMissions.reset_space(state)
+            end
             state.last_frontier_repair_tick = game.tick
             state.last_frontier_repair_created = Functions.ensure_frontier_chests(state)
+            schedule_mts_nauvis_cleanup(state, 120)
         end
-        schedule_mts_nauvis_cleanup(state, 120)
     end
     if SpaceMissions.enabled() then
         script.raise_event(expanse.events.mission_gui_update, {})
@@ -2335,10 +2409,11 @@ local function process_pending_player_teleports()
     for player_index, pending in pairs(expanse.pending_player_teleports) do
         if game.tick >= pending.tick then
             local player = game.get_player(player_index)
-            local state = player and player.valid and player.connected and state_from_player(player) or nil
+            local state = player and player.valid and player.connected
+                and player.force.name == pending.force_name and state_from_force_name(pending.force_name) or nil
             if state and state_key(state) == pending.force_name then
                 ensure_state_ready(state)
-                local surface = game.surfaces[state.active_surface_index]
+                local surface = Public.surface_impl.active(state)
                 -- Only move the player if MTS hasn't already placed them on the team
                 -- surface with a character. For vanilla teams the gameplay surface IS
                 -- the MTS spawn surface, so MTS's placement is final -- re-centering
@@ -2417,7 +2492,7 @@ end
 
 local function process_hungry_chests_for_online_states()
     for _, state in iter_states() do
-        if state.active_surface_index and game.surfaces[state.active_surface_index] and state_has_connected_players(state) then
+        if Public.surface_impl.active(state) and state_has_connected_players(state) then
             process_hungry_chests(state)
         else
             state.hungry_scan_keys = nil
@@ -2475,7 +2550,7 @@ end
 local OVERLAY_LAYOUT = 2
 
 -- Tear down every overlay object for a state (the old single object + the line table).
-local function destroy_overlay(state)
+function Public.surface_impl.destroy_overlay(state)
     if state.invasion_overlay then
         if state.invasion_overlay.valid then state.invasion_overlay.destroy() end
         state.invasion_overlay = nil
@@ -2516,12 +2591,12 @@ end
 -- it without opening a GUI; refreshed at 1 Hz from process_state_tick so all three stay
 -- current. Under MTS we suppress MTS's own spawn label so this replaces it.
 local function update_overlay(state)
-    local surface = state.active_surface_index and game.surfaces[state.active_surface_index]
+    local surface = Public.surface_impl.active(state)
     if not (surface and surface.valid) then
         return
     end
     if state.overlay_layout ~= OVERLAY_LAYOUT then
-        destroy_overlay(state)
+        Public.surface_impl.destroy_overlay(state)
         state.overlay_layout = OVERLAY_LAYOUT
     end
     -- Suppress MTS's own spawn label. Keyed by surface name (not a sticky bool) so a surface
@@ -2558,7 +2633,7 @@ local function update_overlay(state)
 end
 
 local function process_state_tick(state)
-    if not state.active_surface_index or not game.surfaces[state.active_surface_index] then
+    if not Public.surface_impl.active(state) then
         return
     end
     update_overlay(state)
@@ -3500,7 +3575,7 @@ commands.add_command(
         local state = force_name and state_from_force_name(force_name) or expanse
         reset(state)
         ensure_state_ready(state)
-        local surface = game.surfaces[state.active_surface_index]
+        local surface = Public.surface_impl.active(state)
         if not (surface and surface.valid) then
             return { ok = false, error = 'missing active surface', force_name = state_key(state) }
         end
@@ -3599,7 +3674,7 @@ commands.add_command(
     function Public.probe_complete_first_hungry_chest(force_name)
         local state = force_name and state_from_force_name(force_name) or expanse
         ensure_state_ready(state)
-        local surface = game.surfaces[state.active_surface_index]
+        local surface = Public.surface_impl.active(state)
         if not (surface and surface.valid) then
             return { ok = false, error = 'missing active surface', force_name = state_key(state) }
         end
@@ -3665,7 +3740,7 @@ commands.add_command(
     function Public.probe_admin_open(force_name)
         local state = force_name and state_from_force_name(force_name) or expanse
         ensure_state_ready(state)
-        local surface = game.surfaces[state.active_surface_index]
+        local surface = Public.surface_impl.active(state)
         if not (surface and surface.valid) then
             return { ok = false, error = 'missing active surface' }
         end
@@ -3791,7 +3866,7 @@ commands.add_command(
     function Public.probe_cell_open_biters(force_name)
         local state = force_name and state_from_force_name(force_name) or expanse
         ensure_state_ready(state)
-        local surface = game.surfaces[state.active_surface_index]
+        local surface = Public.surface_impl.active(state)
         if not (surface and surface.valid) then
             return { ok = false, error = 'missing active surface', force_name = state_key(state) }
         end
@@ -3884,7 +3959,7 @@ commands.add_command(
     function Public.probe_cell_open_fish(force_name)
         local state = force_name and state_from_force_name(force_name) or expanse
         ensure_state_ready(state)
-        local surface = game.surfaces[state.active_surface_index]
+        local surface = Public.surface_impl.active(state)
         if not (surface and surface.valid) then
             return { ok = false, error = 'missing active surface', force_name = state_key(state) }
         end
@@ -3978,7 +4053,7 @@ commands.add_command(
         if state.sync_invasions == false then
             return { ok = false, error = 'sync invasions disabled', force_name = state_key(state) }
         end
-        local surface = game.surfaces[state.active_surface_index]
+        local surface = Public.surface_impl.active(state)
         if not (surface and surface.valid) then
             return { ok = false, error = 'missing active surface', force_name = state_key(state) }
         end
@@ -4055,7 +4130,7 @@ commands.add_command(
     function Public.probe_forfeit(force_name)
         local state = force_name and state_from_force_name(force_name) or expanse
         ensure_state_ready(state)
-        local surface = state.active_surface_index and game.surfaces[state.active_surface_index] or nil
+        local surface = Public.surface_impl.active(state)
         local force = state_force(state)
         if not (surface and surface.valid and force and force.valid) then
             return { ok = false, error = 'missing surface or force', force_name = state_key(state) }
@@ -4368,7 +4443,7 @@ commands.add_command(
     function Public.probe_invasion_tracking(force_name)
         local state = force_name and state_from_force_name(force_name) or expanse
         ensure_state_ready(state)
-        local surface = game.surfaces[state.active_surface_index]
+        local surface = Public.surface_impl.active(state)
         if not (surface and surface.valid) then
             return { ok = false, error = 'missing active surface', force_name = state_key(state) }
         end
@@ -4452,7 +4527,7 @@ commands.add_command(
     function Public.probe_admin_open_variants(force_name)
         local state = force_name and state_from_force_name(force_name) or expanse
         ensure_state_ready(state)
-        local surface = game.surfaces[state.active_surface_index]
+        local surface = Public.surface_impl.active(state)
         if not (surface and surface.valid) then
             return { ok = false, error = 'missing active surface' }
         end
@@ -4516,7 +4591,7 @@ commands.add_command(
             return { ok = true, skipped = true, mode = Mode.current() }
         end
 
-        local surface = game.surfaces[state.active_surface_index]
+        local surface = Public.surface_impl.active(state)
         if not (surface and surface.valid) then
             return { ok = false, error = 'missing active surface', mode = Mode.current() }
         end
@@ -4569,7 +4644,7 @@ commands.add_command(
     function Public.probe_frontier_repair(force_name)
         local state = force_name and state_from_force_name(force_name) or expanse
         ensure_state_ready(state)
-        local surface = game.surfaces[state.active_surface_index]
+        local surface = Public.surface_impl.active(state)
         if not (surface and surface.valid) then
             return { ok = false, error = 'missing active surface' }
         end
@@ -4677,7 +4752,7 @@ commands.add_command(
 		    end
             local meta_map = state.meta_map or expanse.meta_map or {}
 		
-		    local surface = state.active_surface_index and game.surfaces[state.active_surface_index] or nil
+		    local surface = Public.surface_impl.active(state)
 		    return {
 	            force_name = state_key(state),
 	        active_surface_index = state.active_surface_index,

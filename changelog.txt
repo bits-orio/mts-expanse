@@ -1,4 +1,16 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.16
+Date: 22. 09. 2026
+  Bugfixes:
+    - Fixed recycled team slots spawning on NonOrbit or another team's surface after a mod update.
+      Gameplay surfaces are now checked by name as well as index, and released team state is cleared.
+    - Mod updates no longer recreate mission support surfaces for retired teams. Affected occupied
+      teams recover their existing Expanse world, or a new starting cell if their old world was deleted.
+      Healthy factories, research, and mission progress are preserved.
+  Tests:
+    - Added native Factorio regressions for reused surface indices, upgrade recovery, team release,
+      and preserving another team's world in vanilla and Space Age.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.15
 Date: 19. 09. 2026
   Bugfixes:

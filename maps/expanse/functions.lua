@@ -75,11 +75,14 @@ local delay_infini_tree_token =
     Token.register(
         function (event)
             local surface = event.surface
+            if not (surface and surface.valid and event.expanse.active_surface_index == surface.index) then
+                return -- The team may have been released while this task was queued.
+            end
             local position = event.position
 
             local species = cell_random_int(event.expanse, position, 9100, 9)
             local newtree = surface.create_entity({ name = 'tree-0' .. species, position = position })
-            event.expanse.tree = script.register_on_object_destroyed(newtree)
+            if newtree then event.expanse.tree = script.register_on_object_destroyed(newtree) end
         end
     )
 
