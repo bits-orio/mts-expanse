@@ -1829,7 +1829,7 @@ local function uranium_mining(entity, state)
     if tank and tank.valid then
         local acid = tank.get_fluid_count('sulfuric-acid')
         if acid > 5 then
-            local placed = Functions.spill_rock_ore(entity.surface, entity.position, 'uranium-ore', 4, state.rock_spill_radius)
+            local placed = Functions.spill_rock_ore({ surface = entity.surface, position = entity.position, name = 'uranium-ore', count = 4, radius = state.rock_spill_radius })
             if placed > 0 then
                 tank.remove_fluid { name = 'sulfuric-acid', amount = placed }
                 FT.flying_text(nil, entity.surface, tank.position, '-' .. placed .. ' [fluid=sulfuric-acid]', { r = 0.88, g = 0.02, b = 0.02 })
@@ -1891,7 +1891,8 @@ end
 -- mined: true when this call comes from an actual mining action (player/robot), false for a
 -- death or a scripted regrow -- so only mining actions count toward the milestone, while the
 -- ore is always registered as produced.
-local function infini_rock(entity, state, mined)
+-- miner: the player behind the action, if any; they take the penalty when the ore overflows.
+local function infini_rock(entity, state, mined, miner)
     if entity.type ~= 'simple-entity' then
         return
     end
@@ -1917,7 +1918,10 @@ local function infini_rock(entity, state, mined)
         if roll then
             -- Only the ore that found room counts; the yield index still advances so the
             -- Nth mine rolls the same item on every team.
-            local placed = Functions.spill_rock_ore(entity.surface, entity.position, roll, amount, state.rock_spill_radius)
+            local placed = Functions.spill_rock_ore({
+                surface = entity.surface, position = entity.position, name = roll, count = amount,
+                radius = state.rock_spill_radius, force = state_force(state), miner = miner
+            })
             if placed > 0 then
                 -- Register the rock's ore as produced so it shows in the native per-team Production GUI.
                 local stats = state_force(state).get_item_production_statistics(entity.surface)
@@ -1991,12 +1995,16 @@ local function infini_resource(event)
     -- it would desync the per-team yield index (biters hit each team at different times).
     local is_premine = event.name ~= defines.events.on_entity_died
     local team_kill = false
+    local miner = event.player_index and game.get_player(event.player_index) or nil
     if not is_premine then
         local cause = event.cause
         team_kill = (cause and cause.valid and cause.force and cause.force.name ~= 'enemy') or false
+        if cause and cause.valid and cause.type == 'character' then
+            miner = cause.player
+        end
     end
     if entity.name == 'big-rock' then
-        infini_rock(entity, state, is_premine or team_kill)
+        infini_rock(entity, state, is_premine or team_kill, miner)
     elseif is_premine and (entity.type == 'tree' or entity.type == 'plant') then
         count_resource_mine(state, 'tree')
     end

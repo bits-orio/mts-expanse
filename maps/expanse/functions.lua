@@ -1576,21 +1576,8 @@ function Public.chest_value(expanse, player)
     end
 end
 
--- Spill ore next to the rock, no further than radius tiles away. Returns how many items found
--- room on the ground or a belt; the rest are not produced at all. Without a cap the engine
--- searches the whole surface for a free spot for each item; on an island already covered in
--- ore, with nothing but void around it, one mine of ~120 items hung a 2.0.77 headless server
--- for minutes. Capped, a mine on a full island costs a few milliseconds at most.
-function Public.spill_rock_ore(surface, position, name, count, radius)
-    local placed = surface.spill_item_stack({
-        position = position,
-        stack = { name = name, count = count },
-        enable_looted = true,
-        allow_belts = true,
-        max_radius = radius,
-        use_start_position_on_failure = false
-    })
-    return #placed
-end
+-- The rock's ore spill and its overflow penalty live in rock_spill.lua; main.lua reaches
+-- them through this module because it has no local slots left (Lua's limit of 200).
+Public.spill_rock_ore = require('maps.expanse.rock_spill').spill
 
 return Public
