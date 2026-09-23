@@ -1,4 +1,15 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.17
+Date: ????
+  Changes:
+    - The infinite rock's ore only lands within one chunk (32 tiles) of the rock. Once that
+      ground and the belts on it are full, the rock stops yielding ore until room is cleared,
+      instead of covering the whole island and spilling past its edges.
+  Bugfixes:
+    - Fixed the server freezing for everyone while a player mines the rock AFK on an island
+      already covered in ore. With no free tile anywhere on the surface, each mine made the
+      engine search the entire surface for every one of its ~120 items.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.16
 Date: 22. 09. 2026
   Bugfixes:

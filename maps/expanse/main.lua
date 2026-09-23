@@ -1827,9 +1827,11 @@ local function uranium_mining(entity, state)
     if tank and tank.valid then
         local acid = tank.get_fluid_count('sulfuric-acid')
         if acid > 5 then
-            tank.remove_fluid { name = 'sulfuric-acid', amount = 4 }
-            entity.surface.spill_item_stack({position = entity.position, stack ={ name = 'uranium-ore', count = 4 }, enable_looted = true, allow_belts = true})
-            FT.flying_text(nil, entity.surface, tank.position, '-4 [fluid=sulfuric-acid]', { r = 0.88, g = 0.02, b = 0.02 })
+            local placed = Functions.spill_rock_ore(entity.surface, entity.position, 'uranium-ore', 4)
+            if placed > 0 then
+                tank.remove_fluid { name = 'sulfuric-acid', amount = placed }
+                FT.flying_text(nil, entity.surface, tank.position, '-' .. placed .. ' [fluid=sulfuric-acid]', { r = 0.88, g = 0.02, b = 0.02 })
+            end
         end
     end
 end
@@ -1911,10 +1913,14 @@ local function infini_rock(entity, state, mined)
         local roll = deterministic_weighted(state, entity.position, index * 2, inf_ores)
         local amount = 80 + Functions.cell_random_int(state, entity.position, index * 2 + 1, 81) - 1
         if roll then
-            entity.surface.spill_item_stack({position = entity.position, stack = { name = roll, count = amount }, enable_looted = true, allow_belts = true})
-            -- Register the rock's ore as produced so it shows in the native per-team Production GUI.
-            local stats = state_force(state).get_item_production_statistics(entity.surface)
-            if stats then stats.on_flow(roll, amount) end
+            -- Only the ore that found room counts; the yield index still advances so the
+            -- Nth mine rolls the same item on every team.
+            local placed = Functions.spill_rock_ore(entity.surface, entity.position, roll, amount)
+            if placed > 0 then
+                -- Register the rock's ore as produced so it shows in the native per-team Production GUI.
+                local stats = state_force(state).get_item_production_statistics(entity.surface)
+                if stats then stats.on_flow(roll, placed) end
+            end
         end
         uranium_mining(entity, state)
         if newrock then
