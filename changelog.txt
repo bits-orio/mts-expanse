@@ -2,9 +2,11 @@
 Version: 0.1.17
 Date: ????
   Changes:
-    - The infinite rock's ore only lands within one chunk (32 tiles) of the rock. Once that
-      ground and the belts on it are full, the rock stops yielding ore until room is cleared,
-      instead of covering the whole island and spilling past its edges.
+    - The infinite rock's ore only lands within a set distance of the rock, one chunk (32 tiles)
+      by default. Once that ground and the belts on it are full, the rock stops yielding ore
+      until room is cleared, instead of covering the whole island and spilling past its edges.
+    - New map setting "Rock ore spill radius" (4 to 128 tiles) sets that distance. It can be
+      changed while the game runs and applies to every team at once.
   Bugfixes:
     - Fixed the server freezing for everyone while a player mines the rock AFK on an island
       already covered in ore. With no free tile anywhere on the surface, each mine made the
