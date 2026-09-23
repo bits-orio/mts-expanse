@@ -7,14 +7,14 @@
 -- milliseconds and simply yields less.
 --
 -- A mine whose ore does not all fit means the miner has covered every free tile around the
--- rock. The team is warned once, and the miner loses a tenth of their health every second
--- until they die. The death is announced to the team.
+-- rock. The team is warned once, and the miner loses a quarter of their health every second
+-- until they die, about four seconds later. The death is announced to the team.
 local Event = require 'utils.event'
 local Global = require 'utils.global'
 
 local Public = {}
 
-local DRAIN_FRACTION = 0.1
+local DRAIN_FRACTION = 0.25
 local DRAIN_INTERVAL_TICKS = 60
 local WARNING_COLOR = { r = 1, g = 0.35, b = 0.25 }
 
