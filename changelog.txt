@@ -2,14 +2,13 @@
 Version: 0.1.17
 Date: ????
   Changes:
-    - The infinite rock's ore only lands within a set distance of the rock, one chunk (32 tiles)
-      by default. Once that ground and the belts on it are full, the rock stops yielding ore
-      until room is cleared, instead of covering the whole island and spilling past its edges.
-    - New map setting "Rock ore spill radius" (4 to 128 tiles) sets that distance. It can be
-      changed while the game runs and applies to every team at once.
-    - Burying the rock has a price. When a mine's ore no longer fits, the team is warned and
-      every further mine that overflows costs the miner a quarter of their health, so four in
-      a row kill them. Stopping stops the loss. A death is announced to the team.
+    - The infinite rock's ore only lands on the team's own island. Once every free tile and
+      belt on the island is full, the rock yields no more ore instead of spilling past the
+      island's edge.
+    - Burying the island has a price. When a mine's ore no longer fits anywhere on it, the team
+      is warned and every further mine that overflows costs the miner a quarter of their
+      health, so four in a row kill them. Stopping stops the loss. A death is announced to the
+      team. With two cells this comes quickly; a large island takes far longer to fill.
   Bugfixes:
     - Fixed the server freezing for everyone while a player mines the rock AFK on an island
       already covered in ore. With no free tile anywhere on the surface, each mine made the

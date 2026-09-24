@@ -1,13 +1,13 @@
 -- The infinite rock's ore spill, and the penalty for burying the island in it.
 --
--- Ore lands within a set radius of the rock (map setting, one chunk by default). Without
--- a cap the engine searches the whole surface for a free spot for each item; on an island
--- already covered in ore, with nothing but void around it, one mine of ~120 items hung a
--- 2.0.77 headless server for minutes. Capped, a mine on a full island costs a few
--- milliseconds and simply yields less.
+-- Ore lands anywhere on the team's island. The engine is told to search as far as the
+-- farthest corner of the farthest unlocked cell plus one tile of void, which is every tile
+-- of the surface that can hold an item; past that there is only out-of-map. Without that
+-- bound the engine keeps searching the void for each item, and on an island already
+-- covered in ore one mine of ~120 items hung a 2.0.77 headless server for minutes.
 --
--- A mine whose ore does not all fit means the miner has covered every free tile around the
--- rock. Every such mine costs the miner a quarter of their health, so four in a row kill
+-- A mine whose ore does not all fit means every open space on the surface is taken by ore,
+-- machines or full belts: the ore has spilled over. Every such mine costs the miner a quarter of their health, so four in a row kill
 -- them; stopping stops the loss. The team is warned once per episode, and a death is
 -- announced to the team. Nothing runs on a tick: it is all driven by the mine itself.
 local Event = require 'utils.event'
@@ -58,17 +58,46 @@ local function bury(force, player)
     end
 end
 
--- Spill ore next to the rock, no further than args.radius tiles away. Returns how many
--- items found room on the ground or a belt; the rest are not produced at all. When some
--- did not fit and args.miner is a player, that player is buried.
--- args: surface, position, name, count, radius, force?, miner?
+-- Distance from position to the farthest corner of any unlocked cell, plus one tile of
+-- void, so a spill bounded by it can reach every tile of the island and nothing beyond.
+-- Recomputed only when the cell count changes; a team unlocks cells far less often than it
+-- mines the rock.
+local function island_radius(state, position)
+    local size = state.size or 1
+    if state.island_radius and state.island_radius_size == size then
+        return state.island_radius
+    end
+    local square = state.square_size
+    local radius_sq = square * square
+    for key in pairs(state.grid or {}) do
+        local x, y = key:match('^(-?%d+)_(-?%d+)$')
+        x, y = tonumber(x), tonumber(y)
+        if x and y then
+            for _, corner in ipairs({ { x, y }, { x + square, y }, { x, y + square }, { x + square, y + square } }) do
+                local dx, dy = corner[1] - position.x, corner[2] - position.y
+                local d = dx * dx + dy * dy
+                if d > radius_sq then
+                    radius_sq = d
+                end
+            end
+        end
+    end
+    state.island_radius = math.ceil(math.sqrt(radius_sq)) + 1
+    state.island_radius_size = size
+    return state.island_radius
+end
+
+-- Spill ore next to the rock, anywhere on the team's island. Returns how many items found
+-- room on the ground or a belt; the rest are not produced at all. When some did not fit
+-- and args.miner is a player, that player is buried.
+-- args: state, surface, position, name, count, force?, miner?
 function Public.spill(args)
     local placed = args.surface.spill_item_stack({
         position = args.position,
         stack = { name = args.name, count = args.count },
         enable_looted = true,
         allow_belts = true,
-        max_radius = args.radius,
+        max_radius = island_radius(args.state, args.position),
         use_start_position_on_failure = false
     })
     local count = #placed
