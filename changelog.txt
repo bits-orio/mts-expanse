@@ -7,9 +7,9 @@ Date: ????
       until room is cleared, instead of covering the whole island and spilling past its edges.
     - New map setting "Rock ore spill radius" (4 to 128 tiles) sets that distance. It can be
       changed while the game runs and applies to every team at once.
-    - Burying the rock has a price. When a mine's ore no longer fits, the team is warned once
-      and the miner loses a quarter of their health every second until they die. The death is
-      announced to the team.
+    - Burying the rock has a price. When a mine's ore no longer fits, the team is warned and
+      every further mine that overflows costs the miner a quarter of their health, so four in
+      a row kill them. Stopping stops the loss. A death is announced to the team.
   Bugfixes:
     - Fixed the server freezing for everyone while a player mines the rock AFK on an island
       already covered in ore. With no free tile anywhere on the surface, each mine made the

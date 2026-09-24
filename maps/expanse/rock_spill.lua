@@ -7,38 +7,60 @@
 -- milliseconds and simply yields less.
 --
 -- A mine whose ore does not all fit means the miner has covered every free tile around the
--- rock. The team is warned once, and the miner loses a quarter of their health every second
--- until they die, about four seconds later. The death is announced to the team.
+-- rock. Every such mine costs the miner a quarter of their health, so four in a row kill
+-- them; stopping stops the loss. The team is warned once per episode, and a death is
+-- announced to the team. Nothing runs on a tick: it is all driven by the mine itself.
 local Event = require 'utils.event'
 local Global = require 'utils.global'
 
 local Public = {}
 
-local DRAIN_FRACTION = 0.25
-local DRAIN_INTERVAL_TICKS = 60
+local HEALTH_LOSS_FRACTION = 0.25
+-- An overflow this long after the previous one is a fresh episode and warns again.
+local EPISODE_GAP_TICKS = 60 * 60
 local WARNING_COLOR = { r = 1, g = 0.35, b = 0.25 }
 
--- sick[player_index] = { started = tick, fatal = bool }
-local store = { sick = {} }
+-- buried[player_index] = { last_tick = tick, fatal = bool }
+local store = { buried = {} }
 Global.register(store, function (tbl)
     store = tbl
 end)
 
--- Warn once and start the drain. A player already draining is left alone.
-local function start(force, player)
-    if not (player and player.valid) or store.sick[player.index] then
-        return
-    end
-    store.sick[player.index] = { started = game.tick }
+local function warn(force, player)
     if force and force.valid then
         force.print({ 'expanse.rock-spill-warning-team', player.name }, WARNING_COLOR)
     end
     player.print({ 'expanse.rock-spill-warning-player' }, WARNING_COLOR)
 end
 
+-- One overflowing mine: warn if this is a new episode, then take the health.
+local function bury(force, player)
+    if not (player and player.valid) then
+        return
+    end
+    local entry = store.buried[player.index]
+    if not entry or game.tick - entry.last_tick > EPISODE_GAP_TICKS then
+        entry = {}
+        store.buried[player.index] = entry
+        warn(force, player)
+    end
+    entry.last_tick = game.tick
+    local character = player.character
+    if not (character and character.valid) then
+        return
+    end
+    local loss = character.max_health * HEALTH_LOSS_FRACTION
+    if character.health <= loss then
+        entry.fatal = true
+        character.die()
+    else
+        character.health = character.health - loss
+    end
+end
+
 -- Spill ore next to the rock, no further than args.radius tiles away. Returns how many
 -- items found room on the ground or a belt; the rest are not produced at all. When some
--- did not fit and args.miner is a player, that player starts draining.
+-- did not fit and args.miner is a player, that player is buried.
 -- args: surface, position, name, count, radius, force?, miner?
 function Public.spill(args)
     local placed = args.surface.spill_item_stack({
@@ -51,40 +73,23 @@ function Public.spill(args)
     })
     local count = #placed
     if count < args.count then
-        start(args.force, args.miner)
+        bury(args.force, args.miner)
     end
     return count
 end
 
-local function drain()
-    for index, entry in pairs(store.sick) do
-        local player = game.get_player(index)
-        local character = player and player.valid and player.character
-        if character and character.valid then
-            local loss = character.max_health * DRAIN_FRACTION
-            if character.health <= loss then
-                entry.fatal = true
-                character.die()
-            else
-                character.health = character.health - loss
-            end
-        end
-    end
-end
-
 local function on_player_died(event)
-    local entry = store.sick[event.player_index]
+    local entry = store.buried[event.player_index]
     if not entry then
         return
     end
-    store.sick[event.player_index] = nil
+    store.buried[event.player_index] = nil
     local player = game.get_player(event.player_index)
     if entry.fatal and player and player.valid and player.force.valid then
         player.force.print({ 'expanse.rock-spill-death', player.name }, WARNING_COLOR)
     end
 end
 
-Event.on_nth_tick(DRAIN_INTERVAL_TICKS, drain)
 Event.add(defines.events.on_player_died, on_player_died)
 
 return Public
