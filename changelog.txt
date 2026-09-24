@@ -2,17 +2,18 @@
 Version: 0.1.17
 Date: ????
   Changes:
-    - The infinite rock's ore only lands on the team's own island. Once every free tile and
-      belt on the island is full, the rock yields no more ore instead of spilling past the
-      island's edge.
-    - Burying the island has a price. When a mine's ore no longer fits anywhere on it, the team
-      is warned and every further mine that overflows costs the miner a quarter of their
-      health, so four in a row kill them. Stopping stops the loss. A death is announced to the
-      team. With two cells this comes quickly; a large island takes far longer to fill.
+    - The infinite rock's ore only lands on the team's own island. Nothing is searched or
+      spilled past its edge.
+    - Burying the rock has a price. A mine whose ore lands more than 32 tiles from the rock
+      costs the miner a tenth of their health, which will not heal back; the tenth such mine
+      kills. Stopping stops it. The team is warned once and told of a death. Ore carried off
+      by belts never counts, so a belt-fed rock is safe.
+    - New map setting "Rock ore spill radius" (4 to 256 tiles) sets that distance. Admins can
+      change it while the game runs.
   Bugfixes:
     - Fixed the server freezing for everyone while a player mines the rock AFK on an island
       already covered in ore. With no free tile anywhere on the surface, each mine made the
-      engine search the entire surface for every one of its ~120 items.
+      engine search the void beyond the island without end.
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.16
 Date: 22. 09. 2026

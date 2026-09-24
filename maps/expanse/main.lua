@@ -160,7 +160,8 @@ local function expanse_config()
         invasion_render_grace_ticks = global_setting('mts-expanse-invasion-render-grace-ticks', 120),
         use_space_platform = global_setting('mts-expanse-use-space-platform', false),
         nonspace_support_size = global_setting('mts-expanse-nonspace-support-size', 40),
-        rocket_launch_weight_threshold = global_setting('mts-expanse-rocket-launch-weight-threshold', 999500)
+        rocket_launch_weight_threshold = global_setting('mts-expanse-rocket-launch-weight-threshold', 999500),
+        rock_spill_radius = global_setting('mts-expanse-rock-spill-radius', 32)
     }
 end
 
@@ -407,6 +408,7 @@ local function init_state_defaults(state, force_name)
     state.use_space_platform = config.use_space_platform
     state.nonspace_support_size = config.nonspace_support_size
     state.rocket_launch_weight_threshold = config.rocket_launch_weight_threshold
+    state.rock_spill_radius = config.rock_spill_radius
     state.cell_biter_units = state.cell_biter_units or {}
     state.cell_biter_tracker = state.cell_biter_tracker or {}
     state.forfeit_history = state.forfeit_history or {}
@@ -1827,11 +1829,9 @@ local function uranium_mining(entity, state)
     if tank and tank.valid then
         local acid = tank.get_fluid_count('sulfuric-acid')
         if acid > 5 then
-            local placed = Functions.spill_rock_ore({ state = state, surface = entity.surface, position = entity.position, name = 'uranium-ore', count = 4 })
-            if placed > 0 then
-                tank.remove_fluid { name = 'sulfuric-acid', amount = placed }
-                FT.flying_text(nil, entity.surface, tank.position, '-' .. placed .. ' [fluid=sulfuric-acid]', { r = 0.88, g = 0.02, b = 0.02 })
-            end
+            tank.remove_fluid { name = 'sulfuric-acid', amount = 4 }
+            Functions.spill_rock_ore({ state = state, surface = entity.surface, position = entity.position, name = 'uranium-ore', count = 4, radius = state.rock_spill_radius })
+            FT.flying_text(nil, entity.surface, tank.position, '-4 [fluid=sulfuric-acid]', { r = 0.88, g = 0.02, b = 0.02 })
         end
     end
 end
@@ -1914,17 +1914,13 @@ local function infini_rock(entity, state, mined, miner)
         local roll = deterministic_weighted(state, entity.position, index * 2, inf_ores)
         local amount = 80 + Functions.cell_random_int(state, entity.position, index * 2 + 1, 81) - 1
         if roll then
-            -- Only the ore that found room counts; the yield index still advances so the
-            -- Nth mine rolls the same item on every team.
-            local placed = Functions.spill_rock_ore({
+            Functions.spill_rock_ore({
                 state = state, surface = entity.surface, position = entity.position, name = roll, count = amount,
-                force = state_force(state), miner = miner
+                radius = state.rock_spill_radius, force = state_force(state), miner = miner
             })
-            if placed > 0 then
-                -- Register the rock's ore as produced so it shows in the native per-team Production GUI.
-                local stats = state_force(state).get_item_production_statistics(entity.surface)
-                if stats then stats.on_flow(roll, placed) end
-            end
+            -- Register the rock's ore as produced so it shows in the native per-team Production GUI.
+            local stats = state_force(state).get_item_production_statistics(entity.surface)
+            if stats then stats.on_flow(roll, amount) end
         end
         uranium_mining(entity, state)
         if newrock then
