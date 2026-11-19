@@ -31,6 +31,16 @@ These use disposable native Factorio saves in vanilla and Space Age, both
 standalone and with MTS. They verify immediate removal, repeat resets, and no
 delayed enemies while preserving research, map progress, and unrelated entities.
 
+Run the mission cargo station regressions (station placement and protection,
+chest requests and combinator signals, a part-load launch that completes a
+step, surplus kept in the chest, missions reopening after a reset, command
+targets under MTS, biome decal conversion and the Gaia reward migration),
+standalone and with MTS:
+
+```bash
+python3 scripts/test-mission-station.py
+```
+
 Run the saved event-ID regression against the published 0.1.19 baseline and the
 working tree, in standalone/MTS and vanilla/Space Age:
 

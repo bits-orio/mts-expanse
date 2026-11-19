@@ -1130,6 +1130,9 @@ Public.rewards = {
             }
         }
     },
+    -- Steps 4, 6, 8 and 10 pay double fruit. They used to add 5% to the spoil
+    -- time, which Factorio only has as one game-wide value: one team's reward
+    -- applied to every team and was lost whenever world settings were re-applied.
     [8] = {
         [1] = {
             ['script'] = {
@@ -1155,12 +1158,9 @@ Public.rewards = {
         [4] = {
             ['production'] = {
                 ['spoilage|normal'] = 100,
-                ['yumako|normal'] = 2,
-                ['jellynut|normal'] = 2,
+                ['yumako|normal'] = 4,
+                ['jellynut|normal'] = 4,
                 ['pentapod-egg|normal'] = 1,
-            },
-            ['script'] = {
-                ['spoiling'] = 0.05
             }
         },
         [5] = {
@@ -1174,12 +1174,9 @@ Public.rewards = {
         [6] = {
             ['production'] = {
                 ['spoilage|normal'] = 100,
-                ['yumako|normal'] = 2,
-                ['jellynut|normal'] = 2,
+                ['yumako|normal'] = 4,
+                ['jellynut|normal'] = 4,
                 ['pentapod-egg|normal'] = 1,
-            },
-            ['script'] = {
-                ['spoiling'] = 0.05
             }
         },
         [7] = {
@@ -1193,12 +1190,9 @@ Public.rewards = {
         [8] = {
             ['production'] = {
                 ['spoilage|normal'] = 100,
-                ['yumako|normal'] = 2,
-                ['jellynut|normal'] = 2,
+                ['yumako|normal'] = 4,
+                ['jellynut|normal'] = 4,
                 ['pentapod-egg|normal'] = 1,
-            },
-            ['script'] = {
-                ['spoiling'] = 0.05
             }
         },
         [9] = {
@@ -1212,12 +1206,9 @@ Public.rewards = {
         [10] = {
             ['production'] = {
                 ['spoilage|normal'] = 100,
-                ['yumako|normal'] = 2,
-                ['jellynut|normal'] = 2,
+                ['yumako|normal'] = 4,
+                ['jellynut|normal'] = 4,
                 ['pentapod-egg|normal'] = 1,
-            },
-            ['script'] = {
-                ['spoiling'] = 0.05
             }
         },
         [11] = {
