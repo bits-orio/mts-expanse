@@ -93,9 +93,10 @@ jobs:
             }
             /^Version: / {
               if (prev != "" && $2 == prev) { exit }
-              # No earlier release in this repository (the first one cut
-              # here): the notes are this version's entry alone, not the
-              # whole changelog.
+              # No earlier release in this repository, so this is the first
+              # one cut here: the notes are the entry of this version alone,
+              # not the whole changelog. (No apostrophes in this awk program:
+              # it sits inside single quotes.)
               if (prev == "" && collecting) { exit }
               collecting = 1
               print "### " $0
