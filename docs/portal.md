@@ -6,6 +6,10 @@
 
 MTS Expanse makes map expansion the game. Your team starts on a small patch of land with nothing around it, and the blue chests on its edge are hungry: deliver what one asks for and the land behind it opens. It is a mod port of the Expanse scenario from [ComfyFactorio](https://github.com/ComfyFactory/ComfyFactorio), rebuilt so that every team on a [Multi-Team Support](https://mods.factorio.com/mod/multi-team-support) server gets its own island and its own progress. It plays solo and co-op without Multi-Team Support too.
 
+[![Start on a tiny island and earn every cell of land](https://img.youtube.com/vi/e0b4bgKGYb0/maxresdefault.jpg)](https://www.youtube.com/watch?v=e0b4bgKGYb0)
+
+Watch on YouTube: [Start on a tiny island and earn every cell of land](https://www.youtube.com/watch?v=e0b4bgKGYb0)
+
 ## Status
 
 Playable and in active development. Version 0.1.25 and newer need Factorio 2.1; 0.1.24 is the last version for Factorio 2.0. A save from 2.0 loads on 2.1 and keeps its land, missions and research. Report anything odd on [Discord](https://discord.gg/tWz4FT74pH) or in the [issue tracker](https://github.com/zzh8829/mts-expanse/issues).
