@@ -1,4 +1,53 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.24
+Date: 19. 11. 2026
+  Major Features:
+    - The Space missions window is a mission board. The seven ships are listed by name with
+      their state in words. The selected mission shows every item by name with its progress,
+      what is delivered and what is still to launch, the reward of the step written out, and
+      how to deliver. "What you receive" lists what the ships send down. Escape and E close it.
+    - Every mission silo has a cargo chest and a constant combinator beside it, placed by the
+      mod. The chest requests what the current step still needs, less what is already in the
+      chest, in the rocket or in flight. Robots, inserters and players can fill it. A ready
+      rocket is loaded from the chest and launched for you.
+    - A part load launches by itself when nothing more that the step needs fits, or when the
+      last items of the step are aboard. The combinator outputs what still has to be brought.
+  Features:
+    - The mission silo window has a side panel: the step, what is still to load, the cargo
+      weight, the launch rule in one sentence, and a Launch now button.
+    - Mission silos show their ship name and status above them without Alt mode. Found silos
+      and the landing pad have map tags.
+    - Team chat has one line when a mission opens, when a silo or the landing pad is uncovered,
+      and when a step is done, with the reward and the rockets the next step needs. Only the
+      owning team sees them. The Discord line names the team.
+    - Resetting a base is one window, "Reset your base?". It lists what is removed and what is
+      kept, and the red button works after RESET is typed.
+    - The welcome text is rewritten and has a space missions paragraph in Space Age.
+    - Hungry chests show the remaining count under each icon without Alt mode. A re-roll is
+      announced to the chest's own team only.
+  Changes:
+    - Gaia steps 4, 6, 8 and 10 pay 2 more yumako and jellynut per minute. They used to add to
+      the spoil time of the whole game, which every team shared. Teams already past those
+      steps receive the fruit once on update.
+    - /expanse-forfeit and /expanse-reset from the console act on an existing team only, and
+      forfeit needs the confirm word there too.
+  Bugfixes:
+    - Multi-Team Support event ids are looked up every session. A stored id went stale when
+      another mod changed its event count: joins were refused with "mod event handlers are not
+      identical", or a handler ran on the wrong event.
+    - Missions whose technology is already researched open again after a reset and on update.
+      A reset used to lock a team out of space missions for good.
+    - Repairing the Galactica silo raised an error.
+    - Biome decals are converted on the planet cells. The conversion never ran before, and two
+      Aquilo names were misspelled.
+    - The welcome window keeps its own width. Its paragraphs stretched it across the screen.
+    - The mission board scrolls a long step inside the window. A step with more than twenty
+      items made the window taller than the screen.
+  Tests:
+    - New scripts/test-mission-station.py: 14 native checks of the cargo station, a part-load
+      launch that completes a step, reset unlock, command targets under MTS, decal conversion
+      and the Gaia migration, standalone and with MTS.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.23
 Date: 30. 09. 2026
   Bugfixes:

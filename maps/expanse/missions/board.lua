@@ -9,6 +9,7 @@ local Public = { FRAME = 'expanse_missions_board' }
 
 local WIDTH = 1010
 local LIST_WIDTH = 250
+local DETAIL_HEIGHT = 560
 -- Entry 0 of the list is "What you receive"; the others are mission tiers.
 local RECEIVE = 0
 
@@ -44,9 +45,14 @@ local function build_body(frame, state)
     body.clear()
     local selected = frame.tags.selected
     build_list(body, state, selected)
-    local detail = body.add { type = 'frame', direction = 'vertical', style = 'inside_shallow_frame_with_padding' }
+    local frame_right = body.add { type = 'frame', direction = 'vertical', style = 'inside_shallow_frame_with_padding' }
+    frame_right.style.horizontally_stretchable = true
+    -- A late step lists more than twenty items. The page scrolls inside the
+    -- window so the window, and the button at its end, stay on the screen.
+    local detail = frame_right.add { type = 'scroll-pane', horizontal_scroll_policy = 'never', style = 'naked_scroll_pane' }
     detail.style.horizontally_stretchable = true
-    detail.style.minimal_height = 520
+    detail.style.minimal_height = DETAIL_HEIGHT
+    detail.style.maximal_height = DETAIL_HEIGHT
     if selected == RECEIVE then
         Detail.receive(detail, state)
     else
