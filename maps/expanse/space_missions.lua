@@ -7,6 +7,8 @@ local CargoDelivery = require 'maps.expanse.cargo_delivery'
 local SiloRecovery = require 'maps.expanse.silo_recovery'
 local ExpanseEvents = require 'maps.expanse.events'
 local MissionChat = require 'maps.expanse.missions.chat'
+local MissionPins = require 'maps.expanse.missions.pins'
+local Ships = require 'maps.expanse.missions.ships'
 
 local function uses_space_platform(expanse)
     return SA and expanse and expanse.use_space_platform == true
@@ -90,6 +92,26 @@ local function mission_hub_inventory(expanse, hub)
     return hub.get_inventory(uses_space_platform(expanse) and defines.inventory.hub_main or defines.inventory.cargo_landing_pad_main)
 end
 
+-- A mission silo was uncovered: one chat line, and a pin for every team member.
+local function announce_silo(expanse, tier, silo)
+    MissionChat.silo_found(expanse, tier, silo)
+    MissionPins.team(expanse, expanse.rocket_silos[silo.unit_number])
+end
+
+-- True when earned rewards wait at their source because the landing pad has no
+-- room for them.
+function Public.rewards_blocked(expanse)
+    local hub, pad = mission_hub(expanse), expanse.landing_pad
+    if not (hub and hub.valid and pad and pad.valid) then return false end
+    local sources = {}
+    local inventory = mission_hub_inventory(expanse, hub)
+    if inventory then sources[#sources + 1] = inventory end
+    for _, buffer in pairs(expanse.reward_overflow or {}) do
+        if buffer.valid then sources[#sources + 1] = buffer end
+    end
+    return CargoDelivery.blocked_by_space(sources, pad)
+end
+
 local function create_probe_cargo_pod(expanse, launcher)
     if launcher and launcher.valid then
         local pod = launcher.create_cargo_pod()
@@ -132,6 +154,18 @@ function Public.remove_orbit_platform(expanse)
     destroy_orbit_platform(expanse)
 end
 
+-- The orbit blueprint asks for legendary cargo bays and solar panels. Space Age
+-- runs without the Quality mod since 2.1, and importing then drops every entity
+-- of a tier that does not exist. Rewrite those to the normal tier first.
+local function with_known_qualities(blueprint_string)
+    if prototypes.quality['legendary'] then return blueprint_string end
+    local blueprint = helpers.json_to_table(helpers.decode_string(blueprint_string:sub(2)))
+    for _, entity in pairs(blueprint.blueprint.entities or {}) do
+        if entity.quality and not prototypes.quality[entity.quality] then entity.quality = nil end
+    end
+    return '0' .. helpers.encode_string(helpers.table_to_json(blueprint))
+end
+
 function Public.init_space(expanse)
     if not Public.enabled() then return end
     if not uses_space_platform(expanse) then
@@ -142,7 +176,8 @@ function Public.init_space(expanse)
     local space_force = state_force(expanse)
     local platform = space_force.create_space_platform({name = force_scoped_name(expanse, 'Orbit'), planet = home_planet(expanse), starter_pack = 'space-platform-starter-pack'})
     if not platform then return end
-    platform.apply_starter_pack()
+    -- Silent: the team did not build this platform, so no chat line announces it.
+    platform.apply_starter_pack(true)
 
     expanse.space_platform = platform
     local surface = platform.surface
@@ -150,13 +185,15 @@ function Public.init_space(expanse)
     local inv = game.create_inventory(1)
     inv.insert({name = 'blueprint'})
     local item = inv[1]
-    item.import_stack(bp)
+    item.import_stack(with_known_qualities(bp))
     item.build_blueprint({surface = surface, position = {0,0}, force = space_force})
     inv.destroy()
+    -- Space Age runs without the Quality mod since 2.1; only normal exists then.
+    local best = prototypes.quality['legendary'] and 'legendary' or 'normal'
     local items = {
         {name = 'space-platform-foundation', count = 234},
-        {name = 'cargo-bay', quality = 'legendary', count = 12},
-        {name = 'solar-panel', quality = 'legendary', count = 8},
+        {name = 'cargo-bay', quality = best, count = 12},
+        {name = 'solar-panel', quality = best, count = 8},
         --{name = 'radar', count = 4}
     }
     for _, stack in pairs(items) do
@@ -262,7 +299,7 @@ function Public.launch_rockets(expanse)
                 weight = weight + itemweight * slot.count
             end
         end
-        if silo.rocket_silo_status == defines.rocket_silo_status.rocket_ready and weight >= (expanse.rocket_launch_weight_threshold or 999500) then
+        if silo.rocket_silo_status == defines.rocket_silo_status.rocket_ready and weight >= Ships.launch_weight(expanse) then
             local station = mission_hub(expanse)
             if station and station.valid then
                 silo.launch_rocket({type = defines.cargo_destination.station, station = station})
@@ -365,7 +402,7 @@ local function tier4_object(expanse, surface, left_top, repeats)
             silo.minable_flag = false
             silo.destructible = false
             expanse.rocket_silos[silo.unit_number] = {entity = silo, tier = 4}
-            MissionChat.silo_found(expanse, 4, silo)
+            announce_silo(expanse, 4, silo)
             return true
         end
     end
@@ -385,7 +422,7 @@ local function tier5_object(expanse, surface, left_top, repeats)
         silo.minable_flag = false
         silo.destructible = false
         expanse.rocket_silos[silo.unit_number] = {entity = silo, tier = tier}
-        MissionChat.silo_found(expanse, tier, silo)
+        announce_silo(expanse, tier, silo)
         return true
     end
     return false
@@ -617,7 +654,7 @@ local function tier10_object(expanse, surface, left_top) --finale
         silo.minable_flag = false
         silo.destructible = false
         expanse.rocket_silos[silo.unit_number] = {entity = silo, tier = 10}
-        MissionChat.silo_found(expanse, 10, silo)
+        announce_silo(expanse, 10, silo)
         expanse.tiered_specials[10].specials = 0
         return true
     end
@@ -968,6 +1005,21 @@ function Public.unlock_mission_tier(expanse, tier, quiet)
         expanse.missions[tier].level = 1
         if not quiet then MissionChat.unlocked(expanse, tier) end
         script.raise_event(ExpanseEvents.mission_gui_update, { tier = tier, force_name = expanse.force_name })
+    end
+end
+
+-- Recipes a team does not get in a mission game: rocket silos and the landing
+-- pad are found, not built. A finished research switches its recipes on, so
+-- this runs after every research. The game also re-applies all technology
+-- effects when a save moves to a new game version (measured: a 2.0 save loaded
+-- on 2.1 had the rocket silo recipe back on), so it runs on that change too.
+function Public.ban_recipes(expanse)
+    if not Public.enabled() then return end
+    local recipes = state_force(expanse).recipes
+    recipes['rocket-silo'].enabled = false
+    recipes['atomic-bomb'].enabled = false
+    if not (expanse.landing_pad and expanse.landing_pad.valid) then
+        recipes['cargo-landing-pad'].enabled = false
     end
 end
 

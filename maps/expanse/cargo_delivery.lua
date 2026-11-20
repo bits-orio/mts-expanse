@@ -21,7 +21,7 @@ local function request_limits(pad, point)
         end
     end
     local control = pad.get_control_behavior()
-    if control and control.circuit_exclusive_mode_of_operation == defines.control_behavior.cargo_landing_pad.exclusive_mode.set_requests then
+    if control and control.set_requests then
         configured = true -- A zero circuit signal means request nothing.
     end
     local limits = {}
@@ -34,6 +34,27 @@ local function request_limits(pad, point)
         end
     end
     return configured and limits or nil
+end
+
+-- True when a reward the pad accepts is waiting and the pad has no room for a
+-- single piece of it. Goods the team's requests leave out do not count: those
+-- wait by the team's own choice.
+function Public.blocked_by_space(sources, pad)
+    local destination = pad.get_inventory(defines.inventory.cargo_landing_pad_main)
+    local point = pad.get_logistic_point(defines.logistic_member_index.cargo_landing_pad_requester)
+    if not (destination and point) then return false end
+    local limits = request_limits(pad, point)
+    if limits and not next(limits) then return false end
+    local stock = {}
+    for _, item in pairs(destination.get_contents()) do stock[key(item.name, item.quality)] = item.count end
+    for _, inventory in ipairs(sources) do
+        for _, item in pairs(inventory.get_contents()) do
+            local id = key(item.name, item.quality)
+            local wanted = not limits or (limits[id] or 0) > (stock[id] or 0)
+            if wanted and destination.get_insertable_count({ name = item.name, quality = item.quality }) == 0 then return true end
+        end
+    end
+    return false
 end
 
 function Public.send(source, launcher, pad, extra_sources, cursor)

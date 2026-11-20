@@ -20,7 +20,7 @@ local function status_text(state, data, stage)
         return { 'expanse-missions.label_done' }
     end
     local weight = Model.inventory_weight(Model.rocket_inventory(data.entity))
-    return { 'expanse-missions.label_active', stage.step, stage.steps, Ships.format_weight(weight) }
+    return { 'expanse-missions.label_active', stage.step, stage.steps, Ships.format_weight(weight), Ships.format_weight(Ships.ROCKET_WEIGHT) }
 end
 
 local function draw(silo, text, offset, color, scale)
@@ -46,7 +46,9 @@ local function refresh_label(state, data)
         data.status_label = draw(silo, text, STATUS_OFFSET, WHITE, 1.3)
         data.status_key = nil
     end
-    local key = stage.status .. stage.step .. (text[4] or '')
+    -- text[5] is the rocket size: it also makes labels drawn before that
+    -- parameter existed get rewritten once.
+    local key = stage.status .. stage.step .. (text[4] or '') .. (text[5] or '')
     if data.status_key ~= key then
         data.status_label.text = text
         data.status_key = key

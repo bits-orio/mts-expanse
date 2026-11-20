@@ -33,9 +33,9 @@ function Public.column_headers(table_element, captions)
 end
 
 -- Item icon with the engine's own tooltip. number is optional.
-function Public.item_slot(parent, name, quality, number)
+function Public.item_slot(parent, name, quality, number, element_name)
     return parent.add {
-        type = 'sprite-button', sprite = 'item/' .. name, quality = quality, style = 'slot_button', number = number,
+        type = 'sprite-button', name = element_name, sprite = 'item/' .. name, quality = quality, style = 'slot_button', number = number,
         elem_tooltip = { type = 'item-with-quality', name = name, quality = quality },
     }
 end

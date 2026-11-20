@@ -5,7 +5,7 @@ one cell at a time.
 
 ![MTS Expanse gameplay screenshot](https://raw.githubusercontent.com/zzh8829/mts-expanse/main/mts-expanse.png)
 
-MTS Expanse is a standalone Factorio 2.0 mod port of ComfyFactorio's Expanse
+MTS Expanse is a standalone Factorio 2.1 mod port of ComfyFactorio's Expanse
 scenario, rebuilt to work cleanly with Multi-Team Support. It turns map
 expansion into the central progression loop: every new chunk of land has a cost,
 and every team has to decide which direction is worth opening next.
@@ -131,11 +131,11 @@ current team.
 
 Required:
 
-- Factorio 2.0
+- Factorio 2.1 (0.1.24 is the last version for Factorio 2.0)
 
 Optional:
 
-- Multi-Team Support
+- Multi-Team Support 0.7.0 or newer (recommended, switched on by default)
 - Space Age
 - Quality
 - Elevated Rails when using Space Age

@@ -665,10 +665,16 @@ local function auto_stash(player, event)
     this.floating_text_y_offsets = {}
 
     local hotbar_items = {}
-    for i = 1, 100, 1 do
-        local prototype = player.get_quick_bar_slot(i)
-        if prototype then
-            hotbar_items[prototype.name] = true
+    -- Quick bar slots are addressed by page and slot, and hold more than item
+    -- filters (blueprint records, spidertron remotes, single item instances).
+    for page = 1, 10 do
+        for slot = 1, player.quick_bar_width do
+            local entry = player.get_quick_bar_slot(page, slot)
+            local filter = entry and entry.filter
+            local name = type(filter) == 'table' and filter.name or filter
+            if name then
+                hotbar_items[name] = true
+            end
         end
     end
 
@@ -821,7 +827,7 @@ local function do_whitelist()
             local r = items[k].name
             this.whitelist[r] = true
         end
-        if items[k] and items[k].fuel_category and items[k].fuel_value then
+        if items[k] and items[k].fuel_categories and items[k].fuel_value then
             local r = items[k].name
             this.furnace_fuel[r] = 0
         end

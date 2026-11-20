@@ -1,4 +1,50 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.25
+Date: 19. 11. 2026
+  Major Features:
+    - Runs on Factorio 2.1. Multi-Team Support 0.7.0 or newer is a recommended dependency: the
+      game switches it on by default and it can be switched off for standalone play.
+      0.1.24 is the last version for Factorio 2.0. Saves from 2.0 load and keep their missions,
+      silos, cargo chests and research.
+  Features:
+    - Hover tooltips. A mission silo says its mission and step, what is still to launch and
+      the reward of the step. A cargo chest says which rocket it feeds. A hungry chest lists
+      what it still wants by name. The landing pad lists what arrives and how often.
+    - Map pins. "Pin silo on my screen" on the mission board pins that silo for the player
+      who clicks. When a silo is uncovered every team member gets a pin with the chat line.
+    - Team alerts while something is stuck: rewards waiting because the landing pad is full,
+      a mission silo with cargo waiting and no power, and a cargo chest that robots hold
+      items for and cannot reach.
+    - The silo side panel shows two numbers per item, still to launch and already in the
+      cargo chest, and the cargo chest's own slots. Items can be moved in and out there,
+      shift-click and control-click included.
+    - New startup setting "Mission rocket cargo": 1 t (default), 2 t, 3 t, 4 t or 5 t per
+      mission rocket. The launch weight, the silo label, the panel, the mission board and
+      the cargo chest's requests follow it.
+  Changes:
+    - Space Age without the Quality mod, which Factorio 2.1 allows: a mission step that asks
+      for a higher quality asks for more normal items instead, 2 for uncommon, 4 for rare,
+      8 for epic and 16 for legendary. The orbit platform is built from normal parts.
+    - The orbit platform of the platform mode is created without a chat announcement.
+    - The "Rocket launch weight threshold" setting is given for a 1 t rocket and scales with
+      the mission rocket cargo setting.
+    - The spectator switch in the config window is gone. Factorio 2.1 removed the player
+      property behind it, which never did anything.
+  Bugfixes:
+    - Loading a 2.0 save on 2.1 switched the rocket silo recipe back on until the team's next
+      research. The recipe ban is applied on a game version change as well.
+    - A reset, forfeit or surface cleanup moves the player's body when the player is looking
+      at the map. Since 2.1 a teleport in map view moves only the camera.
+    - Mission silo repair keeps cargo, modules and trash on 2.1, where a rocket's inventory
+      has no fixed slots and the silo's crafting inventories have new names.
+    - Silo labels drawn by an older version are rewritten after the update.
+  Tests:
+    - All suites pass on Factorio 2.1.25 with Multi-Team Support 0.7.15. The save upgrade
+      tests make their old save on Factorio 2.0.77 and load it on 2.1.
+    - New scripts/test-windows.py: 34 checks that open and operate the mission board, the
+      silo side panel and the reset dialog with a real player, in the game's test mode.
+    - New scripts/test-rocket-lift.py: the mission rocket cargo setting at 1 t and 3 t.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.24
 Date: 19. 11. 2026
   Major Features:

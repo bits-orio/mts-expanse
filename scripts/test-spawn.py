@@ -12,6 +12,10 @@ import io
 ROOT = Path(__file__).resolve().parents[1]
 FACTORIO = Path(os.environ.get('FACTORIO', str(Path.home() / 'Library/Application Support/Steam/steamapps/common/Factorio/factorio.app/Contents/MacOS/factorio')))
 MTS = Path(os.environ.get('MTS_MOD_ZIP', str(Path.home() / 'Library/Application Support/factorio/mods/multi-team-support_0.6.6.zip')))
+# The published 0.1.15 is a Factorio 2.0 mod. On a newer engine the old save is
+# made by PREVIOUS_FACTORIO with PREVIOUS_MTS_MOD_ZIP, then loaded by FACTORIO.
+OLD_FACTORIO = Path(os.environ.get('PREVIOUS_FACTORIO', str(FACTORIO)))
+OLD_MTS = Path(os.environ.get('PREVIOUS_MTS_MOD_ZIP', str(MTS)))
 VERSION = json.loads((ROOT / 'info.json').read_text())['version']
 
 
@@ -36,28 +40,33 @@ def run_case(name, space, upgrade=False):
     mod = path / 'mods' / f'mts-expanse_{VERSION}'
     shutil.copytree(ROOT, mod, ignore=shutil.ignore_patterns('.git', 'scripts', 'dist', '*.zip', '__pycache__', '.DS_Store'))
     instrument(mod, upgrade)
-    old = None
+    def write_profile(mods_dir, config, engine, mts_zip):
+        (mods_dir / mts_zip.name).symlink_to(mts_zip)
+        mods = [{'name': n, 'enabled': True} for n in ['base', 'mts-expanse', 'multi-team-support']]
+        mods += [{'name': n, 'enabled': space} for n in ['space-age', 'quality', 'elevated-rails']]
+        (mods_dir / 'mod-list.json').write_text(json.dumps({'mods': mods}))
+        config.write_text(f'[path]\nread-data={engine.parent.parent}/data\nwrite-data={path}/write-data\n[general]\nlocale=en\n')
+
+    (path / 'write-data').mkdir()
+    write_profile(path / 'mods', path / 'config.ini', FACTORIO, MTS)
+    create = (FACTORIO, path / 'config.ini', path / 'mods')
     if upgrade:
-        old = path / 'mods/mts-expanse_0.1.15'
-        old.mkdir()
+        # The old version gets its own mod folder, so each engine sees one copy.
+        old = path / 'old-mods/mts-expanse_0.1.15'
+        old.mkdir(parents=True)
         # The published 0.1.15 source, independent of the working tree or branch.
         archive = subprocess.check_output(['git', 'archive', '--format=zip', '37315e7053d6ada5c1dc57c41e91706775050e00'], cwd=ROOT)
         with zipfile.ZipFile(io.BytesIO(archive)) as z:
             z.extractall(old)
         instrument(old, True)
-    (path / 'mods' / MTS.name).symlink_to(MTS)
-    mods = [{'name': n, 'enabled': True} for n in ['base', 'mts-expanse', 'multi-team-support']]
-    mods += [{'name': n, 'enabled': space} for n in ['space-age', 'quality', 'elevated-rails']]
-    (path / 'mods/mod-list.json').write_text(json.dumps({'mods': mods}))
-    (path / 'write-data').mkdir()
-    (path / 'config.ini').write_text(f'[path]\nread-data={FACTORIO.parent.parent}/data\nwrite-data={path}/write-data\n[general]\nlocale=en\n')
+        write_profile(path / 'old-mods', path / 'config-old.ini', OLD_FACTORIO, OLD_MTS)
+        create = (OLD_FACTORIO, path / 'config-old.ini', path / 'old-mods')
     save = path / 'test.zip'
-    for label, args in [('create', ['--create', str(save)]), ('benchmark', ['--benchmark', str(save), '--benchmark-ticks', '180', '--benchmark-runs', '1', '--benchmark-sanitize'])]:
-        if upgrade:
-            mods[1]['version'] = '0.1.15' if label == 'create' else VERSION
-            (path / 'mods/mod-list.json').write_text(json.dumps({'mods': mods}))
+    load = (FACTORIO, path / 'config.ini', path / 'mods')
+    for label, (engine, config, mods_dir), args in [('create', create, ['--create', str(save)]),
+            ('benchmark', load, ['--benchmark', str(save), '--benchmark-ticks', '180', '--benchmark-runs', '1', '--benchmark-sanitize'])]:
         with (path / f'{label}.log').open('w') as log:
-            result = subprocess.run([str(FACTORIO), '--config', str(path / 'config.ini'), '--mod-directory', str(path / 'mods'), *args], stdout=log, stderr=subprocess.STDOUT, timeout=120)
+            result = subprocess.run([str(engine), '--config', str(config), '--mod-directory', str(mods_dir), *args], stdout=log, stderr=subprocess.STDOUT, timeout=120)
         if result.returncode or 'stack traceback:' in (path / f'{label}.log').read_text():
             raise AssertionError((path / f'{label}.log').read_text()[-7000:])
         engine_log = (path / 'write-data/factorio-current.log').read_text()

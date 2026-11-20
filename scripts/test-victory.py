@@ -11,9 +11,12 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 FACTORIO = Path(os.environ.get('FACTORIO', str(Path.home() / 'Library/Application Support/Steam/steamapps/common/Factorio/factorio.app/Contents/MacOS/factorio')))
-READ_DATA = FACTORIO.parent.parent / 'data'
 OLD_ZIP = Path(os.environ.get('PREVIOUS_MOD_ZIP', str(ROOT.parent / 'mts-expanse_0.1.12.zip')))
 MTS_ZIP = Path(os.environ.get('MTS_MOD_ZIP', str(Path.home() / 'Library/Application Support/factorio/mods/multi-team-support_0.6.6.zip')))
+# The published 0.1.12 is a Factorio 2.0 mod. On a newer engine the old save is
+# made by PREVIOUS_FACTORIO with PREVIOUS_MTS_MOD_ZIP, then loaded by FACTORIO.
+OLD_FACTORIO = Path(os.environ.get('PREVIOUS_FACTORIO', str(FACTORIO)))
+OLD_MTS_ZIP = Path(os.environ.get('PREVIOUS_MTS_MOD_ZIP', str(MTS_ZIP)))
 VERSION = json.loads((ROOT / 'info.json').read_text())['version']
 WORK = Path(tempfile.mkdtemp(prefix='mts-expanse-victory-'))
 
@@ -31,22 +34,22 @@ def instrument(mod, platform=False):
     shutil.copyfile(ROOT / 'scripts/victory-probe.lua', mod / 'victory_probe.lua')
 
 
-def profile(path, mod, mts, space):
+def profile(path, mod, mts, space, engine=FACTORIO, mts_zip=MTS_ZIP):
     (path / 'mods').mkdir(parents=True)
     (path / 'write-data').mkdir()
     (path / 'mods' / mod.name).symlink_to(mod)
     mods = [{'name': n, 'enabled': True} for n in ['base', 'mts-expanse']]
     mods += [{'name': n, 'enabled': space} for n in ['space-age', 'quality', 'elevated-rails']]
     if mts:
-        (path / 'mods' / MTS_ZIP.name).symlink_to(MTS_ZIP)
+        (path / 'mods' / mts_zip.name).symlink_to(mts_zip)
         mods.append({'name': 'multi-team-support', 'enabled': True})
     (path / 'mods/mod-list.json').write_text(json.dumps({'mods': mods}))
-    (path / 'config.ini').write_text(f'[path]\nread-data={READ_DATA}\nwrite-data={path}/write-data\n[general]\nlocale=en\n')
+    (path / 'config.ini').write_text(f'[path]\nread-data={engine.parent.parent}/data\nwrite-data={path}/write-data\n[general]\nlocale=en\n')
 
 
-def run_engine(path, args, label):
+def run_engine(path, args, label, engine=FACTORIO):
     with (path / f'{label}.log').open('w') as output:
-        subprocess.run([str(FACTORIO), '--config', str(path / 'config.ini'), '--mod-directory', str(path / 'mods'), *args], stdout=output, stderr=subprocess.STDOUT, check=True)
+        subprocess.run([str(engine), '--config', str(path / 'config.ini'), '--mod-directory', str(path / 'mods'), *args], stdout=output, stderr=subprocess.STDOUT, check=True)
 
 
 def run_case(case):
@@ -64,8 +67,8 @@ def run_case(case):
         old = old_root / 'mts-expanse_0.1.12'
         instrument(old)
         old_profile = WORK / (name + '-old-profile')
-        profile(old_profile, old, mts, space)
-        run_engine(old_profile, ['--create', str(save)], 'create')
+        profile(old_profile, old, mts, space, OLD_FACTORIO, OLD_MTS_ZIP)
+        run_engine(old_profile, ['--create', str(save)], 'create', OLD_FACTORIO)
     else:
         run_engine(path, ['--create', str(save)], 'create')
     run_engine(path, ['--benchmark', str(save), '--benchmark-ticks', '10380', '--benchmark-runs', '1', '--benchmark-sanitize'], 'benchmark')

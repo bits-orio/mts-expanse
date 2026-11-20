@@ -63,7 +63,7 @@ function Public.install(Expanse, mts, platform)
             local combinator = assert(pad.surface.create_entity{name='constant-combinator',position={50,45},force=target})
             combinator.get_or_create_control_behavior().add_section().set_slot(1,{value={type='item',name='iron-plate',quality='normal'},min=25})
             combinator.get_wire_connector(defines.wire_connector_id.circuit_green,true).connect_to(pad.get_wire_connector(defines.wire_connector_id.circuit_green,true))
-            pad.get_or_create_control_behavior().circuit_exclusive_mode_of_operation=defines.control_behavior.cargo_landing_pad.exclusive_mode.set_requests
+            pad.get_or_create_control_behavior().set_requests=true
             audit.circuit_started=game.tick
             return
         end
@@ -79,7 +79,7 @@ function Public.install(Expanse, mts, platform)
             Missions.clear_reward_overflow(state)
             src.clear(); dst.clear(); dst.set_bar()
             point.enabled = true
-            pad.get_or_create_control_behavior().circuit_exclusive_mode_of_operation = defines.control_behavior.cargo_landing_pad.exclusive_mode.none
+            pad.get_or_create_control_behavior().set_requests=false
             for _, section in pairs(point.sections) do if section.is_manual then section.filters = {}; section.active = true; section.multiplier = 1 end end
         end
         local function request(item, count, quality)
@@ -133,7 +133,7 @@ function Public.install(Expanse, mts, platform)
         src[30].set_stack{name='space-science-pack',count=10};send()
         check('unrequested_front_stacks_do_not_block_later_requests',incoming('space-science-pack')==7 and incoming('iron-plate')==0)
         clear();src.insert{name='iron-plate',count=100}
-        pad.get_or_create_control_behavior().circuit_exclusive_mode_of_operation=defines.control_behavior.cargo_landing_pad.exclusive_mode.set_requests
+        pad.get_or_create_control_behavior().set_requests=true
         send();check('empty_circuit_requests_pause',#pods==0)
 
         clear();src.insert{name='iron-plate',count=100}

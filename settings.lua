@@ -476,6 +476,16 @@ data:extend({
         order = 'g-b'
     },
     {
+        -- A prototype value, so it is a startup setting. The values are whole
+        -- tonnes; the dropdown labels are in the locale file.
+        type = 'string-setting',
+        name = 'mts-expanse-mission-rocket-lift',
+        setting_type = 'startup',
+        default_value = '1',
+        allowed_values = { '1', '2', '3', '4', '5' },
+        order = 'g-bb'
+    },
+    {
         type = 'int-setting',
         name = 'mts-expanse-rocket-launch-weight-threshold',
         setting_type = 'runtime-global',

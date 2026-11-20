@@ -217,7 +217,7 @@ local function place_player_on_expanse_surface(player, surface, position)
 
     local target = find_character_position(surface, position)
     if player.character and player.character.valid then
-        return player.teleport(target, surface)
+        return Functions.teleport_body(player, target, surface)
     end
 
     if not player.connected then
@@ -638,18 +638,21 @@ local function cleanup_mts_nauvis_surfaces(state)
         local surface = game.surfaces[surface_name]
         if surface and surface.valid and not is_protected_expanse_surface(state, surface) then
             for _, player in pairs(game.players) do
-                if player.valid and player.surface and player.surface.valid and player.surface.index == surface.index then
+                if player.valid and player.physical_surface_index == surface.index then
                     if player.force and player.force.valid and player.force.name == state_key(state) then
                         place_player_on_expanse_surface(player, active_surface, player.force.get_spawn_position(active_surface))
                     else
-                        player.teleport({ 0, 0 }, active_surface)
+                        Functions.teleport_body(player, { 0, 0 }, active_surface)
                     end
+                elseif player.valid and player.surface_index == surface.index then
+                    -- Only looking at this surface on the map: close the view.
+                    player.exit_remote_view()
                 end
             end
 
             local occupied = false
             for _, player in pairs(game.players) do
-                if player.valid and player.surface and player.surface.valid and player.surface.index == surface.index then
+                if player.valid and (player.surface_index == surface.index or player.physical_surface_index == surface.index) then
                     occupied = true
                     break
                 end
@@ -948,6 +951,7 @@ reset = function(state)
     state.gaia_fruit_migrated = true
     -- Research survives a reset, so missions whose technology is done reopen here.
     SpaceMissions.sync_unlocks(state)
+    SpaceMissions.ban_recipes(state)
     state.tiered_specials = {
         [1] = {unlocks = 0, tiles = 0},
         [2] = {unlocks = 0, tiles = 0},
@@ -993,8 +997,8 @@ reset = function(state)
         local old_surface = surface
         local fallback_surface = game.surfaces[DEFAULT_SOURCE_SURFACE]
         for _, player in pairs(game.players) do
-            if player.surface.index == old_surface.index then
-                player.teleport({ -4, -4 }, fallback_surface)
+            if player.physical_surface_index == old_surface.index then
+                Functions.teleport_body(player, { -4, -4 }, fallback_surface)
             end
         end
 
@@ -1043,7 +1047,7 @@ reset = function(state)
     end
 
     for _, player in pairs(state_players(state)) do
-        player.teleport({ -4, -4 }, source_surface)
+        Functions.teleport_body(player, { -4, -4 }, source_surface)
     end
     if SpaceMissions.enabled() then
         SpaceMissions.ensure_support(state)
@@ -1055,7 +1059,7 @@ reset = function(state)
     Functions.ensure_frontier_chests(state)
 
     for _, player in pairs(state_players(state)) do
-        player.teleport(surface.find_non_colliding_position('character', { state.square_size * 0.5, state.square_size * 0.5 }, 8, 0.5) or {5, 5}, surface)
+        Functions.teleport_body(player, surface.find_non_colliding_position('character', { state.square_size * 0.5, state.square_size * 0.5 }, 8, 0.5) or {5, 5}, surface)
     end
     schedule_mts_nauvis_cleanup(state, 120)
     if not is_mts_active() then
@@ -1253,7 +1257,7 @@ local function on_area_cloned(event)
         if is_natural_enemy_entity(cloned_entity) then
             cloned_entity.destroy()
         elseif cloned_entity.valid then
-            cloned_entity.active = true
+            cloned_entity.disabled_by_script = false
         end
     end
 end
@@ -1836,7 +1840,7 @@ local function uranium_mining(entity, state)
     if tank and tank.valid then
         local acid = tank.get_fluid_count('sulfuric-acid')
         if acid > 5 then
-            tank.remove_fluid { name = 'sulfuric-acid', amount = 4 }
+            tank.extract_fluid { name = 'sulfuric-acid', amount = 4 }
             entity.surface.spill_item_stack({position = entity.position, stack ={ name = 'uranium-ore', count = 4 }, enable_looted = true, allow_belts = true})
             FT.flying_text(nil, entity.surface, tank.position, '-4 [fluid=sulfuric-acid]', { r = 0.88, g = 0.02, b = 0.02 })
         end
@@ -2363,6 +2367,7 @@ local function on_configuration_changed(_event)
         state.map_reset_delay_ticks = nil
         SpaceMissions.migrate_gaia_rewards(state)
         SpaceMissions.sync_unlocks(state)
+        SpaceMissions.ban_recipes(state)
         if not Public.surface_impl.active(state) then
             Public.surface_impl.destroy_overlay(state)
             local force = game.forces[state_key(state)]
@@ -2803,16 +2808,7 @@ local function on_research_finished(event)
     local state = state_from_force_name(force.name)
     if not state then return end
     if not SpaceMissions.enabled() then return end
-    local banned_items = {
-        ['cargo-landing-pad'] = (not state.landing_pad or not state.landing_pad.valid) and true or false,
-        ['rocket-silo'] = true,
-        ['atomic-bomb'] = true
-    }
-    for recipe, state in pairs(banned_items) do
-        if state == true then
-            force.recipes[recipe].enabled = false
-        end
-    end
+    SpaceMissions.ban_recipes(state)
     for tier, name in pairs(MissionData.mission_unlocks) do
         if research.name == name then
             SpaceMissions.unlock_mission_tier(state, tier)
@@ -3519,7 +3515,7 @@ commands.add_command(
             }
         end
         entity.destructible = false
-        entity.minable = false
+        entity.minable_flag = false
         local created_position = { x = entity.position.x, y = entity.position.y }
 
         state.containers = state.containers or {}

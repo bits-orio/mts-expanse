@@ -3,7 +3,11 @@
 -- and cargo are in the locale file as expanse-missions.role-<name> / gives-<name>.
 local Public = {}
 
-Public.ROCKET_WEIGHT = 1000000
+-- The engine's weight unit: 1 t is 1,000,000.
+Public.TONNE = 1000000
+-- What one mission rocket lifts, from the startup setting that also sets the
+-- silo prototype's lift weight (data-updates.lua).
+Public.ROCKET_WEIGHT = Public.TONNE * (tonumber(settings.startup['mts-expanse-mission-rocket-lift'].value) or 1)
 Public.FIRST_TIER = 4
 Public.LAST_TIER = 10
 
@@ -39,12 +43,21 @@ function Public.gives(tier)
     return { 'expanse-missions.gives-' .. Public.by_tier[tier].name }
 end
 
--- "620 kg" or "1.5 t" for an item weight in the engine's unit (1 t = 1,000,000).
+-- "620 kg", "1.5 t" or "3 t" for an item weight in the engine's unit.
 function Public.format_weight(weight)
-    if weight >= Public.ROCKET_WEIGHT then
-        return string.format('%.1f t', weight / Public.ROCKET_WEIGHT)
+    if weight < Public.TONNE then
+        return math.floor(weight / 1000 + 0.5) .. ' kg'
     end
-    return math.floor(weight / 1000 + 0.5) .. ' kg'
+    if weight % Public.TONNE == 0 then
+        return math.floor(weight / Public.TONNE) .. ' t'
+    end
+    return string.format('%.1f t', weight / Public.TONNE)
+end
+
+-- Cargo weight at which a mission rocket leaves by itself. The setting is given
+-- for a 1 t rocket and scales with the rocket.
+function Public.launch_weight(state)
+    return (state.rocket_launch_weight_threshold or 999500) * Public.ROCKET_WEIGHT / Public.TONNE
 end
 
 return Public

@@ -1,6 +1,7 @@
 -- Right-hand side of the mission board: one mission in full, or the list of
 -- goods the team's ships send down.
 local Model = require 'maps.expanse.missions.model'
+local Pins = require 'maps.expanse.missions.pins'
 local Ships = require 'maps.expanse.missions.ships'
 local Text = require 'maps.expanse.missions.text'
 local W = require 'maps.expanse.widgets'
@@ -82,7 +83,9 @@ function Public.mission(parent, state, tier)
     if model.status == 'active' then
         local buttons = parent.add { type = 'flow', direction = 'horizontal' }
         buttons.style.top_margin = 6
-        buttons.add { type = 'button', caption = { 'expanse-missions.show_silo' }, tags = { [W.TAG] = 'show_silo', tier = tier } }
+        local pinned = Pins.is_pinned(Model.silo_data(state, tier), game.get_player(parent.player_index))
+        buttons.add { type = 'button', caption = { pinned and 'expanse-missions.unpin_silo' or 'expanse-missions.pin_silo' },
+            tags = { [W.TAG] = 'pin_silo', tier = tier } }
     end
 end
 

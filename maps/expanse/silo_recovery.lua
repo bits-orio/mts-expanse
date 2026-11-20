@@ -6,6 +6,20 @@ function Public.is_broken(silo)
         and not (silo.rocket and silo.rocket.valid)
 end
 
+local function move_inventory(from, to)
+    if #to < #from then
+        -- A rocket's inventory has no fixed slots: it grows with its cargo and
+        -- is limited by weight alone, so the stacks are handed over whole.
+        to.transfer_from_inventory(from)
+        return
+    end
+    for i = 1, #from do
+        to[i].swap_stack(from[i])
+        if from.supports_filters() then to.set_filter(i, from.get_filter(i)) end
+    end
+    if from.supports_bar() then to.set_bar(from.get_bar()) end
+end
+
 function Public.rebuild(silo)
     if not Public.is_broken(silo) then return nil end
     -- A deleted rocket leaves the native silo permanently in rocket_ready.
@@ -22,17 +36,11 @@ function Public.rebuild(silo)
         'operable', 'rotatable', 'disabled_by_script', 'use_transitional_requests'}) do
         replacement[property] = silo[property]
     end
-    for _, id in ipairs({defines.inventory.rocket_silo_input, defines.inventory.rocket_silo_output,
-        defines.inventory.rocket_silo_modules, defines.inventory.rocket_silo_rocket,
+    for _, id in ipairs({defines.inventory.crafter_input, defines.inventory.crafter_output,
+        defines.inventory.crafter_modules, defines.inventory.rocket_silo_rocket,
         defines.inventory.rocket_silo_trash}) do
         local from, to = silo.get_inventory(id), replacement.get_inventory(id)
-        if from and to then
-            for i = 1, #from do
-                to[i].swap_stack(from[i])
-                if from.supports_filters() then to.set_filter(i, from.get_filter(i)) end
-            end
-            if from.supports_bar() then to.set_bar(from.get_bar()) end
-        end
+        if from and to then move_inventory(from, to) end
     end
     -- rocket_parts counts the buffered next rocket separately from the missing
     -- prepared one. Starting a fresh launch cycle consumes exactly one set.

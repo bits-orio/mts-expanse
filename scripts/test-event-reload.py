@@ -15,6 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 ENGINE = Path(os.environ.get('FACTORIO', str(Path.home() / 'Library/Application Support/Steam/steamapps/common/Factorio/factorio.app/Contents/MacOS/factorio')))
 MTS = Path(os.environ.get('MTS_MOD_ZIP', str(Path.home() / 'Library/Application Support/factorio/mods/multi-team-support_0.6.6.zip')))
 BASELINE = '94a61968a86f3dd8af5761eaf4813a776f87c152'
+# BASELINE is a Factorio 2.0 mod. On a newer engine the save with the drifted
+# ids is made by PREVIOUS_FACTORIO with PREVIOUS_MTS_MOD_ZIP and loaded by
+# FACTORIO; the phase that reloads the old code is skipped, as it cannot load.
+OLD_ENGINE = Path(os.environ.get('PREVIOUS_FACTORIO', str(ENGINE)))
+OLD_MTS = Path(os.environ.get('PREVIOUS_MTS_MOD_ZIP', str(MTS)))
 
 
 def instrument(mod, mts, shift, bootstrap):
@@ -51,18 +56,23 @@ def run_case(name, space, mts):
     path = Path(tempfile.mkdtemp(prefix=f'mts-event-reload-{name}-'))
     print(f'{name}: {path}', flush=True)
     (path / 'mods').mkdir()
-    if mts: (path / 'mods' / MTS.name).symlink_to(MTS)
     mods = [{'name': n, 'enabled': True} for n in ['base', 'mts-expanse']]
     mods += [{'name': n, 'enabled': space} for n in ['quality', 'elevated-rails', 'space-age']]
     if mts: mods.append({'name': 'multi-team-support', 'enabled': True})
     (path / 'mods/mod-list.json').write_text(json.dumps({'mods': mods}))
     (path / 'write-data/saves').mkdir(parents=True)
-    (path / 'config.ini').write_text(f'[path]\nread-data={ENGINE.parent.parent}/data\nwrite-data={path}/write-data\n[general]\nlocale=en\n')
     save = path / 'before.zip'
+    active = {}
+
+    def use(engine, mts_zip):
+        active['engine'] = engine
+        for link in (path / 'mods').glob('multi-team-support_*.zip'): link.unlink()
+        if mts: (path / 'mods' / mts_zip.name).symlink_to(mts_zip)
+        (path / 'config.ini').write_text(f'[path]\nread-data={engine.parent.parent}/data\nwrite-data={path}/write-data\n[general]\nlocale=en\n')
 
     def run(label, args):
         with (path / f'{label}.log').open('w') as f:
-            command = [str(ENGINE), '--config', str(path / 'config.ini'),
+            command = [str(active['engine']), '--config', str(path / 'config.ini'),
                 '--mod-directory', str(path / 'mods'), *args]
             if label == 'establish':
                 result = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=f, stderr=subprocess.STDOUT, text=True)
@@ -87,10 +97,11 @@ def run_case(name, space, mts):
         (path / f'{label}-engine.log').write_text(engine_log)
         return log + engine_log
 
+    use(OLD_ENGINE, OLD_MTS)
     install(path, mts, 0)
     created = run('create', ['--create', str(save)])
     assert 'stack traceback:' not in created, created[-6000:]
-    server_settings = json.loads((ENGINE.parent.parent / 'data/server-settings.example.json').read_text())
+    server_settings = json.loads((OLD_ENGINE.parent.parent / 'data/server-settings.example.json').read_text())
     server_settings.update({'name': 'Disposable event regression',
         'visibility': {'public': False, 'lan': False}, 'require_user_verification': False,
         'auto_pause': False, 'autosave_interval': 0})
@@ -104,6 +115,8 @@ def run_case(name, space, mts):
     shift = fixture['shift']
     assert shift > 0, fixture
     phases = [('broken', False, False), ('reload', True, False), ('upgrade', True, True)]
+    if OLD_ENGINE != ENGINE: phases = phases[1:]
+    use(ENGINE, MTS)
     for phase, fixed, upgrade in phases:
         install(path, mts, shift, fixed, upgrade)
         report_path = path / 'write-data/script-output/event-result.json'
@@ -118,7 +131,8 @@ def run_case(name, space, mts):
         if fixed:
             assert 'stack traceback:' not in log, log[-6000:]
             assert not failed, report
-            assert report['configuration_changed'] == upgrade, report
+            # A different engine is itself a configuration change.
+            assert report['configuration_changed'] == (upgrade or OLD_ENGINE != ENGINE), report
         else:
             assert "to 'get_player' (string expected, got nil)" in log, 'Did not reproduce the supplied log'
             assert any(key.endswith(':enemies_spawned') for key in failed), report

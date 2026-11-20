@@ -3,6 +3,7 @@
 local Model = require 'maps.expanse.missions.model'
 local Ships = require 'maps.expanse.missions.ships'
 local Detail = require 'maps.expanse.missions.board_detail'
+local Pins = require 'maps.expanse.missions.pins'
 local W = require 'maps.expanse.widgets'
 
 local Public = { FRAME = 'expanse_missions_board' }
@@ -109,12 +110,12 @@ function Public.refresh(player, state, entry)
     build_body(frame, state)
 end
 
--- Chat line with a map ping; clicking it opens the map on the silo.
-function Public.show_silo(player, state, tier)
-    local silo = Model.stage(state, tier).silo
-    if not silo then return end
-    player.print({ 'expanse-missions.silo_ping', Ships.by_tier[tier].name,
-        math.floor(silo.position.x), math.floor(silo.position.y), silo.surface.name })
+-- Pins the mission's silo for this player, or takes the pin away again.
+function Public.pin_silo(player, state, tier)
+    local data = Model.silo_data(state, tier)
+    if not data then return end
+    Pins.toggle(data, player)
+    Public.refresh(player, state)
 end
 
 return Public

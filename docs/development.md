@@ -41,6 +41,27 @@ standalone and with MTS:
 python3 scripts/test-mission-station.py
 ```
 
+Open and operate the mission board, the silo side panel and the reset dialog
+with a real player. This uses the game's test mode, so it needs Factorio 2.1.24
+or newer:
+
+```bash
+python3 scripts/test-windows.py
+```
+
+Check the mission rocket cargo setting at 1 t and at bigger rockets (the silo
+prototype, the rocket's hold, the weight at which a rocket leaves by itself, the
+silo label and the cargo chest's request budget):
+
+```bash
+python3 scripts/test-rocket-lift.py
+```
+
+On Factorio 2.1 the tests that load a save from an older release make that save
+with the older game. Point `PREVIOUS_FACTORIO` at a 2.0 binary and
+`PREVIOUS_MTS_MOD_ZIP` at Multi-Team Support 0.6.11 for `test-victory.py`,
+`test-spawn.py` and `test-event-reload.py`.
+
 Run the saved event-ID regression against the published 0.1.19 baseline and the
 working tree, in standalone/MTS and vanilla/Space Age:
 

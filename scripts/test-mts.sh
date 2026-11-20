@@ -13,6 +13,8 @@ WORK_DIR="${WORK_DIR:-/tmp/mts-expanse-mts-test}"
 
 MOD_NAME="$(python3 -c 'import json; print(json.load(open("info.json"))["name"])')"
 VERSION="$(python3 -c 'import json; print(json.load(open("info.json"))["version"])')"
+# Probe mods follow the game version the mod itself targets.
+FACTORIO_VERSION="$(python3 -c 'import json; print(json.load(open("info.json"))["factorio_version"])' < /dev/null)"
 MTS_VERSION=""
 PACKAGE_NAME="${MOD_NAME}_${VERSION}"
 ACTIVE_MTS_MOD_SOURCE=""
@@ -163,7 +165,7 @@ write_probe_mod() {
   "version": "0.1.0",
   "title": "MTS Expanse MTS Probe",
   "author": "local",
-  "factorio_version": "2.0",
+  "factorio_version": "$FACTORIO_VERSION",
   "dependencies": ["base", "? space-age", "multi-team-support", "$MOD_NAME"]
 }
 EOF

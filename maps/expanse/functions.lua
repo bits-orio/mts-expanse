@@ -6,7 +6,11 @@ local Task = require 'utils.task'
 local Token = require 'utils.token'
 local ExpanseEvents = require 'maps.expanse.events'
 local format_number = require 'util'.format_number
+local ChestTooltip = require 'maps.expanse.chest_tooltip'
 local Public = {}
+
+-- main.lua is at Lua's 200-local limit, so it reaches this through Functions.
+Public.teleport_body = require 'utils.body_teleport'.to
 
 local ores = { 'copper-ore', 'iron-ore', 'stone', 'coal' }
 local price_modifiers = {
@@ -496,7 +500,7 @@ local function create_frontier_chest(expanse, surface, candidate)
         return false
     end
     entity.destructible = false
-    entity.minable = false
+    entity.minable_flag = false
     register_container(expanse, entity, unlock_left_top)
     return true
 end
@@ -1421,11 +1425,15 @@ local function price_request_signature(price)
 end
 
 local function sync_container_requests(container, force)
+    local signature = price_request_signature(container.price)
+    if container.tooltip_signature ~= signature then
+        ChestTooltip.set(container.entity, container.price)
+        container.tooltip_signature = signature
+    end
     local logi = container.entity.get_logistic_point(defines.logistic_member_index.logistic_container)
     if not logi then
         return
     end
-    local signature = price_request_signature(container.price)
     if not force and container.request_signature == signature then
         return
     end
