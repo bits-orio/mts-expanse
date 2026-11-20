@@ -18,6 +18,8 @@ STEAM_PLAYER_DATA_BACKUP="${STEAM_PLAYER_DATA_BACKUP:-$WORK_DIR/steam-player-dat
 
 MOD_NAME="$(python3 -c 'import json; print(json.load(open("info.json"))["name"])')"
 VERSION="$(python3 -c 'import json; print(json.load(open("info.json"))["version"])')"
+# Probe mods follow the game version the mod itself targets.
+FACTORIO_VERSION="$(python3 -c 'import json; print(json.load(open("info.json"))["factorio_version"])' < /dev/null)"
 MTS_VERSION=""
 PACKAGE_NAME="${MOD_NAME}_${VERSION}"
 PROBE="mts-expanse-two-client-probe_0.1.0"
@@ -191,7 +193,7 @@ write_probe_mod() {
   "version": "0.1.0",
   "title": "MTS Expanse Two Client Probe",
   "author": "local",
-  "factorio_version": "2.0",
+  "factorio_version": "$FACTORIO_VERSION",
   "dependencies": ["base", "quality", "multi-team-support", "$MOD_NAME"]
 }
 EOF

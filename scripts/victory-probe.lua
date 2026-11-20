@@ -120,7 +120,7 @@ function Public.install(Expanse)
             assert(state.missions[4].level == 3 and state.missions[10].level == 12, 'mission progress lost')
             assert(state.victory_tick == audit.victory_tick, 'victory marker changed')
             -- Repeated victory events must remain harmless.
-            script.raise_event(state.events.victory, {force_name = target})
+            script.raise_event(Expanse.events.victory, {force_name = target})
             assert(state.victory_tick == audit.victory_tick, 'repeated victory changed completion time')
             for _, task in pairs(state.schedule) do assert(task.event ~= 'map_reset', 'repeated victory scheduled reset') end
             local hub = state.use_space_platform and state.space_platform.hub or state.nonspace_pad

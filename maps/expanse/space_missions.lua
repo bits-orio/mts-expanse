@@ -3,10 +3,12 @@ local Mode = require 'maps.expanse.mode'
 local SA = Mode.is_space_age()
 local Raffle = require 'utils.math.raffle'
 local MissionData = require 'maps.expanse.mission_data'
-local Server = require 'utils.server'
 local CargoDelivery = require 'maps.expanse.cargo_delivery'
 local SiloRecovery = require 'maps.expanse.silo_recovery'
 local ExpanseEvents = require 'maps.expanse.events'
+local MissionChat = require 'maps.expanse.missions.chat'
+local MissionPins = require 'maps.expanse.missions.pins'
+local Ships = require 'maps.expanse.missions.ships'
 
 local function uses_space_platform(expanse)
     return SA and expanse and expanse.use_space_platform == true
@@ -52,15 +54,6 @@ local function force_scoped_name(expanse, name)
     return force_name .. '-' .. name
 end
 
-local function print_to_state(expanse, message, color)
-    local force = state_force(expanse)
-    if force and force.valid then
-        force.print(message, color)
-    else
-        game.print(message, color)
-    end
-end
-
 local function cell_size(expanse)
     return expanse.square_size or 15
 end
@@ -97,6 +90,26 @@ end
 local function mission_hub_inventory(expanse, hub)
     if not (hub and hub.valid) then return nil end
     return hub.get_inventory(uses_space_platform(expanse) and defines.inventory.hub_main or defines.inventory.cargo_landing_pad_main)
+end
+
+-- A mission silo was uncovered: one chat line, and a pin for every team member.
+local function announce_silo(expanse, tier, silo)
+    MissionChat.silo_found(expanse, tier, silo)
+    MissionPins.team(expanse, expanse.rocket_silos[silo.unit_number])
+end
+
+-- True when earned rewards wait at their source because the landing pad has no
+-- room for them.
+function Public.rewards_blocked(expanse)
+    local hub, pad = mission_hub(expanse), expanse.landing_pad
+    if not (hub and hub.valid and pad and pad.valid) then return false end
+    local sources = {}
+    local inventory = mission_hub_inventory(expanse, hub)
+    if inventory then sources[#sources + 1] = inventory end
+    for _, buffer in pairs(expanse.reward_overflow or {}) do
+        if buffer.valid then sources[#sources + 1] = buffer end
+    end
+    return CargoDelivery.blocked_by_space(sources, pad)
 end
 
 local function create_probe_cargo_pod(expanse, launcher)
@@ -141,6 +154,18 @@ function Public.remove_orbit_platform(expanse)
     destroy_orbit_platform(expanse)
 end
 
+-- The orbit blueprint asks for legendary cargo bays and solar panels. Space Age
+-- runs without the Quality mod since 2.1, and importing then drops every entity
+-- of a tier that does not exist. Rewrite those to the normal tier first.
+local function with_known_qualities(blueprint_string)
+    if prototypes.quality['legendary'] then return blueprint_string end
+    local blueprint = helpers.json_to_table(helpers.decode_string(blueprint_string:sub(2)))
+    for _, entity in pairs(blueprint.blueprint.entities or {}) do
+        if entity.quality and not prototypes.quality[entity.quality] then entity.quality = nil end
+    end
+    return '0' .. helpers.encode_string(helpers.table_to_json(blueprint))
+end
+
 function Public.init_space(expanse)
     if not Public.enabled() then return end
     if not uses_space_platform(expanse) then
@@ -151,7 +176,8 @@ function Public.init_space(expanse)
     local space_force = state_force(expanse)
     local platform = space_force.create_space_platform({name = force_scoped_name(expanse, 'Orbit'), planet = home_planet(expanse), starter_pack = 'space-platform-starter-pack'})
     if not platform then return end
-    platform.apply_starter_pack()
+    -- Silent: the team did not build this platform, so no chat line announces it.
+    platform.apply_starter_pack(true)
 
     expanse.space_platform = platform
     local surface = platform.surface
@@ -159,13 +185,15 @@ function Public.init_space(expanse)
     local inv = game.create_inventory(1)
     inv.insert({name = 'blueprint'})
     local item = inv[1]
-    item.import_stack(bp)
+    item.import_stack(with_known_qualities(bp))
     item.build_blueprint({surface = surface, position = {0,0}, force = space_force})
     inv.destroy()
+    -- Space Age runs without the Quality mod since 2.1; only normal exists then.
+    local best = prototypes.quality['legendary'] and 'legendary' or 'normal'
     local items = {
         {name = 'space-platform-foundation', count = 234},
-        {name = 'cargo-bay', quality = 'legendary', count = 12},
-        {name = 'solar-panel', quality = 'legendary', count = 8},
+        {name = 'cargo-bay', quality = best, count = 12},
+        {name = 'solar-panel', quality = best, count = 8},
         --{name = 'radar', count = 4}
     }
     for _, stack in pairs(items) do
@@ -271,7 +299,7 @@ function Public.launch_rockets(expanse)
                 weight = weight + itemweight * slot.count
             end
         end
-        if silo.rocket_silo_status == defines.rocket_silo_status.rocket_ready and weight >= (expanse.rocket_launch_weight_threshold or 999500) then
+        if silo.rocket_silo_status == defines.rocket_silo_status.rocket_ready and weight >= Ships.launch_weight(expanse) then
             local station = mission_hub(expanse)
             if station and station.valid then
                 silo.launch_rocket({type = defines.cargo_destination.station, station = station})
@@ -282,32 +310,13 @@ function Public.launch_rockets(expanse)
     end
 end
 
-local function silo_renders(silo, tier)
-    local id = rendering.draw_sprite {
-        sprite = 'virtual-signal/signal-grey',
-        surface = silo.surface,
-        target = {
-            entity = silo,
-            offset = { 0, -1.5 }
-        },
-        x_scale = 1.1,
-        y_scale = 1.1,
-        render_layer = '190',
-        only_in_alt_mode = true
-    }
-    local id2 = rendering.draw_sprite {
-        sprite = 'virtual-signal/signal-' .. tier,
-        surface = silo.surface,
-        target = {
-            entity = silo,
-            offset = { 0, -1.5 }
-        },
-        x_scale = 0.75,
-        y_scale = 0.75,
-        render_layer = '191',
-        only_in_alt_mode = true
-    }
-    return { id, id2}
+-- Sends a mission rocket with whatever it holds. Used by the Launch now button
+-- and for part loads that nothing more can be added to.
+function Public.launch_silo(expanse, silo)
+    local station = mission_hub(expanse)
+    if not (silo and silo.valid and station and station.valid) then return false end
+    if silo.rocket_silo_status ~= defines.rocket_silo_status.rocket_ready then return false end
+    return silo.launch_rocket({type = defines.cargo_destination.station, station = station})
 end
 
 function Public.repair_silos(expanse)
@@ -324,11 +333,10 @@ function Public.repair_silos(expanse)
         local old = data.entity
         local replacement = SiloRecovery.rebuild(old)
         if replacement then
-            for _, render in pairs(data.renders or {}) do
-                if render.valid then render.destroy() end
-            end
+            -- Re-key first: launches are credited through the unit number, so an
+            -- error after the swap must not leave the old key behind. The label
+            -- hung on the old entity; missions/markers.lua draws a new one.
             data.entity = replacement
-            data.renders = silo_renders(replacement, data.tier)
             expanse.rocket_silos[entry.unit] = nil
             expanse.rocket_silos[replacement.unit_number] = data
             for _, cargo in pairs(expanse.cargo_pods or {}) do
@@ -387,14 +395,14 @@ local function tier4_object(expanse, surface, left_top, repeats)
             pad.destructible = false
             expanse.landing_pad = pad
             force.recipes['cargo-landing-pad'].enabled = true
+            MissionChat.pad_found(expanse, pad)
             return true
         elseif expanse.tiered_specials[4].unlocks == 1 then
             local silo = surface.create_entity({name = 'rocket-silo', position = position, force = state_force(expanse)})
             silo.minable_flag = false
             silo.destructible = false
-            local renders = silo_renders(silo, 4)
-            local silos = expanse.rocket_silos
-            silos[silo.unit_number] = {entity = silo, tier = 4, renders = renders}
+            expanse.rocket_silos[silo.unit_number] = {entity = silo, tier = 4}
+            announce_silo(expanse, 4, silo)
             return true
         end
     end
@@ -413,9 +421,8 @@ local function tier5_object(expanse, surface, left_top, repeats)
         local silo = surface.create_entity({name = 'rocket-silo', position = position, force = state_force(expanse)})
         silo.minable_flag = false
         silo.destructible = false
-        local renders = silo_renders(silo, tier)
-        local silos = expanse.rocket_silos
-        silos[silo.unit_number] = {entity = silo, tier = tier, renders = renders}
+        expanse.rocket_silos[silo.unit_number] = {entity = silo, tier = tier}
+        announce_silo(expanse, tier, silo)
         return true
     end
     return false
@@ -646,9 +653,8 @@ local function tier10_object(expanse, surface, left_top) --finale
         local silo = surface.create_entity({name = 'rocket-silo', position = position, force = state_force(expanse)})
         silo.minable_flag = false
         silo.destructible = false
-        local renders = silo_renders(silo, 0)
-        local silos = expanse.rocket_silos
-        silos[silo.unit_number] = {entity = silo, tier = 10, renders = renders}
+        expanse.rocket_silos[silo.unit_number] = {entity = silo, tier = 10}
+        announce_silo(expanse, 10, silo)
         expanse.tiered_specials[10].specials = 0
         return true
     end
@@ -969,30 +975,83 @@ function Public.convert_decoratives(surface, left_top, tier, cell_size)
 
     elseif SA and tier == 9 then
         list = {
-            ['enemy-decal'] = 'aquilo-ice-decal-blue',
-            ['enemy-decal-transparent'] = 'aquilo-snowy-decal'
+            -- "aqulio" is the engine's own spelling of these two prototypes.
+            ['enemy-decal'] = 'aqulio-ice-decal-blue',
+            ['enemy-decal-transparent'] = 'aqulio-snowy-decal'
         }
     end
     local names = {}
     for name, _ in pairs(list) do
         names[#names+1] = name
     end
-    local old_decorations = surface.find_decoratives_filtered({name = names, area = {{left_top.x - 2, left_top.y - 2}, {left_top.x + cell_size + 2, left_top.y + cell_size + 2}}})
+    local area = {{left_top.x - 2, left_top.y - 2}, {left_top.x + cell_size + 2, left_top.y + cell_size + 2}}
     local decoratives = {}
-    for _, deco in pairs(old_decorations) do
-        if deco and deco.valid and list[deco.name] then
-            decoratives[#decoratives+1] = {name = list[deco.name], position = deco.position, amount = deco.amount}
+    -- find_decoratives_filtered returns plain tables: the prototype is in
+    -- .decorative, and there is no .valid or .name to test.
+    for _, deco in pairs(surface.find_decoratives_filtered({name = names, area = area})) do
+        local replacement = list[deco.decorative.name]
+        if replacement then
+            decoratives[#decoratives+1] = {name = replacement, position = deco.position, amount = deco.amount}
         end
     end
-     surface.create_decoratives({decoratives = decoratives})
+    if #decoratives == 0 then return end
+    surface.destroy_decoratives({name = names, area = area})
+    surface.create_decoratives({check_collision = false, decoratives = decoratives})
 end
 
-function Public.unlock_mission_tier(expanse, tier)
+function Public.unlock_mission_tier(expanse, tier, quiet)
     if not Public.enabled() then return end
     if expanse.missions[tier].level == 0 then
         expanse.missions[tier].level = 1
-        print_to_state(expanse, {'expanse.missions_tier_unlock', tier}, {r = 0.88, g = 0, b = 0})
+        if not quiet then MissionChat.unlocked(expanse, tier) end
         script.raise_event(ExpanseEvents.mission_gui_update, { tier = tier, force_name = expanse.force_name })
+    end
+end
+
+-- Recipes a team does not get in a mission game: rocket silos and the landing
+-- pad are found, not built. A finished research switches its recipes on, so
+-- this runs after every research. The game also re-applies all technology
+-- effects when a save moves to a new game version (measured: a 2.0 save loaded
+-- on 2.1 had the rocket silo recipe back on), so it runs on that change too.
+function Public.ban_recipes(expanse)
+    if not Public.enabled() then return end
+    local recipes = state_force(expanse).recipes
+    recipes['rocket-silo'].enabled = false
+    recipes['atomic-bomb'].enabled = false
+    if not (expanse.landing_pad and expanse.landing_pad.valid) then
+        recipes['cargo-landing-pad'].enabled = false
+    end
+end
+
+-- Missions unlock in on_research_finished, which never fires again for a
+-- technology the team already has. Call after anything that rebuilds mission
+-- state while research stays: a map reset, or the mod joining a running save.
+function Public.sync_unlocks(expanse)
+    if not (Public.enabled() and expanse.missions) then return end
+    local technologies = state_force(expanse).technologies
+    for tier, tech in pairs(MissionData.mission_unlocks) do
+        if expanse.missions[tier] and technologies[tech] and technologies[tech].researched then
+            Public.unlock_mission_tier(expanse, tier, true)
+        end
+    end
+end
+
+-- Gaia steps that paid 5% spoil time up to 0.1.23 and pay 2 more of each fruit now.
+local GAIA_FRUIT_STEPS = { 4, 6, 8, 10 }
+
+-- Teams that passed those steps before the change get the fruit they would have
+-- earned. Runs once per team state; a state created later starts flagged.
+function Public.migrate_gaia_rewards(expanse)
+    if expanse.gaia_fruit_migrated then return end
+    expanse.gaia_fruit_migrated = true
+    local mission = expanse.missions and expanse.missions[8]
+    if not (Public.enabled() and mission and expanse.space_production) then return end
+    for _, step in ipairs(GAIA_FRUIT_STEPS) do
+        if mission.level > step then
+            for _, item in ipairs({ 'yumako|normal', 'jellynut|normal' }) do
+                expanse.space_production[item] = (expanse.space_production[item] or 0) + 2
+            end
+        end
     end
 end
 
@@ -1097,22 +1156,15 @@ local function upgrade_mission_level(expanse, tier)
         elseif type == 'script' then
             if reward['victory'] then
                 script.raise_event(ExpanseEvents.victory, { force_name = expanse.force_name })
-            elseif reward['new-ship'] then
-                print_to_state(expanse, {'expanse.script-new-ship', reward['new-ship']})
-            elseif reward['spoiling'] then
-                game.difficulty_settings.spoil_time_modifier = game.difficulty_settings.spoil_time_modifier + reward['spoiling']
             end
         end
     end
     expanse.missions[tier].level = math.min(expanse.missions[tier].level + 1, maxlevel)
-    if expanse.missions[tier].level == maxlevel then
-        print_to_state(expanse, {'expanse.missions_maxlevel', tier})
-        Server.to_discord_embed({'expanse.missions_maxlevel', tier}, true)
-    else
-        print_to_state(expanse, {'expanse.missions_levelup', tier, expanse.missions[tier].level})
-        Server.to_discord_embed({'expanse.missions_levelup', tier, expanse.missions[tier].level}, true)
-    end
     expanse.missions[tier].delivered = {}
+    -- The last level is only a marker; it has no step of its own to announce.
+    if level < maxlevel then
+        MissionChat.step_done(expanse, tier, level, rewards[tier][level])
+    end
     script.raise_event(ExpanseEvents.mission_gui_update, { tier = tier, force_name = expanse.force_name })
 end
 

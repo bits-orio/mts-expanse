@@ -1,4 +1,99 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.25
+Date: 19. 11. 2026
+  Major Features:
+    - Runs on Factorio 2.1. Multi-Team Support 0.7.0 or newer is a recommended dependency: the
+      game switches it on by default and it can be switched off for standalone play.
+      0.1.24 is the last version for Factorio 2.0. Saves from 2.0 load and keep their missions,
+      silos, cargo chests and research.
+  Features:
+    - Hover tooltips. A mission silo says its mission and step, what is still to launch and
+      the reward of the step. A cargo chest says which rocket it feeds. A hungry chest lists
+      what it still wants by name. The landing pad lists what arrives and how often.
+    - Map pins. "Pin silo on my screen" on the mission board pins that silo for the player
+      who clicks. When a silo is uncovered every team member gets a pin with the chat line.
+    - Team alerts while something is stuck: rewards waiting because the landing pad is full,
+      a mission silo with cargo waiting and no power, and a cargo chest that robots hold
+      items for and cannot reach.
+    - The silo side panel shows two numbers per item, still to launch and already in the
+      cargo chest, and the cargo chest's own slots. Items can be moved in and out there,
+      shift-click and control-click included.
+    - New startup setting "Mission rocket cargo": 1 t (default), 2 t, 3 t, 4 t or 5 t per
+      mission rocket. The launch weight, the silo label, the panel, the mission board and
+      the cargo chest's requests follow it.
+  Changes:
+    - Space Age without the Quality mod, which Factorio 2.1 allows: a mission step that asks
+      for a higher quality asks for more normal items instead, 2 for uncommon, 4 for rare,
+      8 for epic and 16 for legendary. The orbit platform is built from normal parts.
+    - The orbit platform of the platform mode is created without a chat announcement.
+    - The "Rocket launch weight threshold" setting is given for a 1 t rocket and scales with
+      the mission rocket cargo setting.
+    - The spectator switch in the config window is gone. Factorio 2.1 removed the player
+      property behind it, which never did anything.
+  Bugfixes:
+    - Loading a 2.0 save on 2.1 switched the rocket silo recipe back on until the team's next
+      research. The recipe ban is applied on a game version change as well.
+    - A reset, forfeit or surface cleanup moves the player's body when the player is looking
+      at the map. Since 2.1 a teleport in map view moves only the camera.
+    - Mission silo repair keeps cargo, modules and trash on 2.1, where a rocket's inventory
+      has no fixed slots and the silo's crafting inventories have new names.
+    - Silo labels drawn by an older version are rewritten after the update.
+  Tests:
+    - All suites pass on Factorio 2.1.25 with Multi-Team Support 0.7.15. The save upgrade
+      tests make their old save on Factorio 2.0.77 and load it on 2.1.
+    - New scripts/test-windows.py: 34 checks that open and operate the mission board, the
+      silo side panel and the reset dialog with a real player, in the game's test mode.
+    - New scripts/test-rocket-lift.py: the mission rocket cargo setting at 1 t and 3 t.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.24
+Date: 19. 11. 2026
+  Major Features:
+    - The Space missions window is a mission board. The seven ships are listed by name with
+      their state in words. The selected mission shows every item by name with its progress,
+      what is delivered and what is still to launch, the reward of the step written out, and
+      how to deliver. "What you receive" lists what the ships send down. Escape and E close it.
+    - Every mission silo has a cargo chest and a constant combinator beside it, placed by the
+      mod. The chest requests what the current step still needs, less what is already in the
+      chest, in the rocket or in flight. Robots, inserters and players can fill it. A ready
+      rocket is loaded from the chest and launched for you.
+    - A part load launches by itself when nothing more that the step needs fits, or when the
+      last items of the step are aboard. The combinator outputs what still has to be brought.
+  Features:
+    - The mission silo window has a side panel: the step, what is still to load, the cargo
+      weight, the launch rule in one sentence, and a Launch now button.
+    - Mission silos show their ship name and status above them without Alt mode. Found silos
+      and the landing pad have map tags.
+    - Team chat has one line when a mission opens, when a silo or the landing pad is uncovered,
+      and when a step is done, with the reward and the rockets the next step needs. Only the
+      owning team sees them. The Discord line names the team.
+    - Resetting a base is one window, "Reset your base?". It lists what is removed and what is
+      kept, and the red button works after RESET is typed.
+    - The welcome text is rewritten and has a space missions paragraph in Space Age.
+    - Hungry chests show the remaining count under each icon without Alt mode. A re-roll is
+      announced to the chest's own team only.
+  Changes:
+    - Gaia steps 4, 6, 8 and 10 pay 2 more yumako and jellynut per minute. They used to add to
+      the spoil time of the whole game, which every team shared. Teams already past those
+      steps receive the fruit once on update.
+    - /expanse-forfeit and /expanse-reset from the console act on an existing team only, and
+      forfeit needs the confirm word there too.
+  Bugfixes:
+    - Multi-Team Support event ids are looked up every session. A stored id went stale when
+      another mod changed its event count: joins were refused with "mod event handlers are not
+      identical", or a handler ran on the wrong event.
+    - Missions whose technology is already researched open again after a reset and on update.
+      A reset used to lock a team out of space missions for good.
+    - Repairing the Galactica silo raised an error.
+    - Biome decals are converted on the planet cells. The conversion never ran before, and two
+      Aquilo names were misspelled.
+    - The welcome window keeps its own width. Its paragraphs stretched it across the screen.
+    - The mission board scrolls a long step inside the window. A step with more than twenty
+      items made the window taller than the screen.
+  Tests:
+    - New scripts/test-mission-station.py: 14 native checks of the cargo station, a part-load
+      launch that completes a step, reset unlock, command targets under MTS, decal conversion
+      and the Gaia migration, standalone and with MTS.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.23
 Date: 30. 09. 2026
   Bugfixes:

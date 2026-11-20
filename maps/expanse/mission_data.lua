@@ -1130,6 +1130,9 @@ Public.rewards = {
             }
         }
     },
+    -- Steps 4, 6, 8 and 10 pay double fruit. They used to add 5% to the spoil
+    -- time, which Factorio only has as one game-wide value: one team's reward
+    -- applied to every team and was lost whenever world settings were re-applied.
     [8] = {
         [1] = {
             ['script'] = {
@@ -1155,12 +1158,9 @@ Public.rewards = {
         [4] = {
             ['production'] = {
                 ['spoilage|normal'] = 100,
-                ['yumako|normal'] = 2,
-                ['jellynut|normal'] = 2,
+                ['yumako|normal'] = 4,
+                ['jellynut|normal'] = 4,
                 ['pentapod-egg|normal'] = 1,
-            },
-            ['script'] = {
-                ['spoiling'] = 0.05
             }
         },
         [5] = {
@@ -1174,12 +1174,9 @@ Public.rewards = {
         [6] = {
             ['production'] = {
                 ['spoilage|normal'] = 100,
-                ['yumako|normal'] = 2,
-                ['jellynut|normal'] = 2,
+                ['yumako|normal'] = 4,
+                ['jellynut|normal'] = 4,
                 ['pentapod-egg|normal'] = 1,
-            },
-            ['script'] = {
-                ['spoiling'] = 0.05
             }
         },
         [7] = {
@@ -1193,12 +1190,9 @@ Public.rewards = {
         [8] = {
             ['production'] = {
                 ['spoilage|normal'] = 100,
-                ['yumako|normal'] = 2,
-                ['jellynut|normal'] = 2,
+                ['yumako|normal'] = 4,
+                ['jellynut|normal'] = 4,
                 ['pentapod-egg|normal'] = 1,
-            },
-            ['script'] = {
-                ['spoiling'] = 0.05
             }
         },
         [9] = {
@@ -1212,12 +1206,9 @@ Public.rewards = {
         [10] = {
             ['production'] = {
                 ['spoilage|normal'] = 100,
-                ['yumako|normal'] = 2,
-                ['jellynut|normal'] = 2,
+                ['yumako|normal'] = 4,
+                ['jellynut|normal'] = 4,
                 ['pentapod-egg|normal'] = 1,
-            },
-            ['script'] = {
-                ['spoiling'] = 0.05
             }
         },
         [11] = {
@@ -1564,5 +1555,34 @@ Public.nonspace_rewards = {
         }
     }
 }
+
+-- Since Factorio 2.1, Space Age runs without the Quality mod. Only the normal
+-- tier exists then, and every engine call that names another tier throws
+-- "Unknown quality name". A step that asks for a higher tier then asks for
+-- more normal items, by the factors below. Prototypes cannot be read while this
+-- file is parsed, so the test is the mod that defines those tiers.
+local NORMAL_ITEMS_PER_TIER = { uncommon = 2, rare = 4, epic = 8, legendary = 16 }
+
+local function fold_to_normal(costs)
+    local higher = {}
+    for key, value in pairs(costs) do
+        if type(value) == 'table' then
+            fold_to_normal(value)
+        elseif type(key) == 'string' and not key:find('|normal', 1, true) then
+            higher[#higher + 1] = key
+        end
+    end
+    for _, key in ipairs(higher) do
+        local name, quality = key:match('^(.-)|(.+)$')
+        local normal = name .. '|normal'
+        costs[normal] = (costs[normal] or 0) + costs[key] * (NORMAL_ITEMS_PER_TIER[quality] or 1)
+        costs[key] = nil
+    end
+end
+
+if not script.active_mods['quality'] then
+    fold_to_normal(Public.costs)
+    fold_to_normal(Public.nonspace_costs)
+end
 
 return Public

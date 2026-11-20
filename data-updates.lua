@@ -18,3 +18,11 @@ end
 for _, prototype in pairs(data.raw['cargo-bay']) do
     allow_reward_pods(prototype.hatch_definitions)
 end
+
+-- Mission rockets carry what the startup setting says. Players cannot build
+-- rocket silos in Expanse, so every silo in the game is a mission silo. One
+-- tonne is the game's own default and leaves the prototype untouched.
+local lift_tonnes = tonumber(settings.startup['mts-expanse-mission-rocket-lift'].value) or 1
+if lift_tonnes > 1 then
+    data.raw['rocket-silo']['rocket-silo'].lift_weight = lift_tonnes * 1000000
+end

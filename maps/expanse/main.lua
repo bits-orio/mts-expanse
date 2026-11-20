@@ -12,6 +12,7 @@ require 'modules.backpack_research'
 local Event = require 'utils.event'
 local Functions = require 'maps.expanse.functions'
 local SpaceMissions = require 'maps.expanse.space_missions'
+local Missions = require 'maps.expanse.missions.hub'
 local MissionData = require 'maps.expanse.mission_data'
 local GetNoise = require 'utils.math.get_noise'
 local Global = require 'utils.global'
@@ -41,9 +42,10 @@ local close_main_frame_button_name = Gui.uid_name()
 local missions_frame_name = Gui.uid_name()
 local close_missions_button_name = Gui.uid_name()
 local forfeit_frame_name = Gui.uid_name()
-local forfeit_confirm_button_name = Gui.uid_name()
-local forfeit_final_confirm_button_name = Gui.uid_name()
-local forfeit_cancel_button_name = Gui.uid_name()
+-- Gui.uid_name hands out sequence numbers. Three button names that lived here
+-- moved to forfeit_dialog.lua; the calls stay so that every name handed out
+-- later keeps its number and still matches the buttons in existing saves.
+for _ = 1, 3 do Gui.uid_name() end
 
 local MTS_INTERFACE = 'mts-v1'
 local DEFAULT_FORCE_NAME = 'player'
@@ -52,12 +54,10 @@ local DEFAULT_SOURCE_SURFACE = 'nauvis'
 local SHARED_SOURCE_SURFACE = 'mts-expanse-meta-source'
 local FORFEIT_DEATH_THRESHOLD = 2
 local FORFEIT_DEATH_WINDOW_TICKS = 60 * 60
-local FORFEIT_DIALOG_WIDTH = 480
-local FORFEIT_DIALOG_TOP_OFFSET = 72
 local reset
 local destroy_natural_enemy_entities
 local FISH_BACKFILL_VERSION = '0.1.10-fish-v2'
-Public.forfeit_impl = {}
+Public.forfeit_impl = { dialog = require 'maps.expanse.forfeit_dialog' }
 Public.surface_impl = {}
 
 local function startup_setting(name, default)
@@ -217,7 +217,7 @@ local function place_player_on_expanse_surface(player, surface, position)
 
     local target = find_character_position(surface, position)
     if player.character and player.character.valid then
-        return player.teleport(target, surface)
+        return Functions.teleport_body(player, target, surface)
     end
 
     if not player.connected then
@@ -497,6 +497,8 @@ state_from_surface = function(surface)
     return nil
 end
 
+Missions.inject({ state_from_player = state_from_player })
+
 local function state_from_cargo_pod(pod)
     if not pod or not pod.valid or not pod.unit_number then
         return nil
@@ -636,18 +638,21 @@ local function cleanup_mts_nauvis_surfaces(state)
         local surface = game.surfaces[surface_name]
         if surface and surface.valid and not is_protected_expanse_surface(state, surface) then
             for _, player in pairs(game.players) do
-                if player.valid and player.surface and player.surface.valid and player.surface.index == surface.index then
+                if player.valid and player.physical_surface_index == surface.index then
                     if player.force and player.force.valid and player.force.name == state_key(state) then
                         place_player_on_expanse_surface(player, active_surface, player.force.get_spawn_position(active_surface))
                     else
-                        player.teleport({ 0, 0 }, active_surface)
+                        Functions.teleport_body(player, { 0, 0 }, active_surface)
                     end
+                elseif player.valid and player.surface_index == surface.index then
+                    -- Only looking at this surface on the map: close the view.
+                    player.exit_remote_view()
                 end
             end
 
             local occupied = false
             for _, player in pairs(game.players) do
-                if player.valid and player.surface and player.surface.valid and player.surface.index == surface.index then
+                if player.valid and (player.surface_index == surface.index or player.physical_surface_index == surface.index) then
                     occupied = true
                     break
                 end
@@ -734,6 +739,8 @@ local function clear_hungry_chests(state, area)
 end
 
 local function destroy_missions_gui(player)
+    Missions.board.close(player)
+    -- Window of releases up to 0.1.23, still open in an older save.
     if player.gui.screen[missions_frame_name] then
         player.gui.screen[missions_frame_name].destroy()
     end
@@ -941,6 +948,10 @@ reset = function(state)
     state.rock_mined_count = 0
     state.acid_tank = nil
     state.biome_offset = expanse.shared_biome_offset
+    state.gaia_fruit_migrated = true
+    -- Research survives a reset, so missions whose technology is done reopen here.
+    SpaceMissions.sync_unlocks(state)
+    SpaceMissions.ban_recipes(state)
     state.tiered_specials = {
         [1] = {unlocks = 0, tiles = 0},
         [2] = {unlocks = 0, tiles = 0},
@@ -986,8 +997,8 @@ reset = function(state)
         local old_surface = surface
         local fallback_surface = game.surfaces[DEFAULT_SOURCE_SURFACE]
         for _, player in pairs(game.players) do
-            if player.surface.index == old_surface.index then
-                player.teleport({ -4, -4 }, fallback_surface)
+            if player.physical_surface_index == old_surface.index then
+                Functions.teleport_body(player, { -4, -4 }, fallback_surface)
             end
         end
 
@@ -1036,7 +1047,7 @@ reset = function(state)
     end
 
     for _, player in pairs(state_players(state)) do
-        player.teleport({ -4, -4 }, source_surface)
+        Functions.teleport_body(player, { -4, -4 }, source_surface)
     end
     if SpaceMissions.enabled() then
         SpaceMissions.ensure_support(state)
@@ -1048,7 +1059,7 @@ reset = function(state)
     Functions.ensure_frontier_chests(state)
 
     for _, player in pairs(state_players(state)) do
-        player.teleport(surface.find_non_colliding_position('character', { state.square_size * 0.5, state.square_size * 0.5 }, 8, 0.5) or {5, 5}, surface)
+        Functions.teleport_body(player, surface.find_non_colliding_position('character', { state.square_size * 0.5, state.square_size * 0.5 }, 8, 0.5) or {5, 5}, surface)
     end
     schedule_mts_nauvis_cleanup(state, 120)
     if not is_mts_active() then
@@ -1246,7 +1257,7 @@ local function on_area_cloned(event)
         if is_natural_enemy_entity(cloned_entity) then
             cloned_entity.destroy()
         elseif cloned_entity.valid then
-            cloned_entity.active = true
+            cloned_entity.disabled_by_script = false
         end
     end
 end
@@ -1282,26 +1293,45 @@ function Public.forfeit_impl.state_from_player_force(player)
     return state_from_force_name(player.force.name)
 end
 
+-- Target of an admin or console command. Under MTS only a team that already has
+-- an Expanse state is valid: state_from_force_name would create a state for any
+-- team-N name, and the default state is never played there, so resetting it
+-- builds a shared surface and moves every player of every team onto it.
+function Public.forfeit_impl.command_state(force_name)
+    if not is_mts_active() then
+        return state_from_force_name(force_name or DEFAULT_FORCE_NAME)
+    end
+    if not (is_team_force_name(force_name) and game.forces[force_name]) then
+        return nil
+    end
+    if not (expanse.team_states and expanse.team_states[force_name]) then
+        return nil
+    end
+    return state_from_force_name(force_name)
+end
+
+-- Target of the remote interface and the Lua API. Other mods and the test probes
+-- create a team's state by resetting it, so any team name is accepted here; only
+-- the default state stays off limits under MTS.
+function Public.forfeit_impl.api_state(force_name)
+    if is_mts_active() and not is_team_force_name(force_name) then
+        return nil
+    end
+    return state_from_force_name(force_name or DEFAULT_FORCE_NAME)
+end
+
 function Public.forfeit_impl.destroy_dialog(player)
-    if player and player.valid and player.gui.screen[forfeit_frame_name] then
+    if not (player and player.valid) then
+        return
+    end
+    Public.forfeit_impl.dialog.close(player)
+    -- Dialog of releases up to 0.1.23, still open in an older save.
+    if player.gui.screen[forfeit_frame_name] then
         player.gui.screen[forfeit_frame_name].destroy()
     end
 end
 
-function Public.forfeit_impl.position_dialog(player, frame)
-    local display_resolution = player.display_resolution
-    local display_scale = player.display_scale or 1
-    local screen_width = display_resolution and display_resolution.width or FORFEIT_DIALOG_WIDTH
-    if display_scale > 0 then
-        screen_width = screen_width / display_scale
-    end
-    frame.location = {
-        x = math.max(0, math.floor((screen_width - FORFEIT_DIALOG_WIDTH) / 2)),
-        y = FORFEIT_DIALOG_TOP_OFFSET
-    }
-end
-
-function Public.forfeit_impl.open_dialog(player, automatic, final_confirm, death_count)
+function Public.forfeit_impl.open_dialog(player, automatic, death_count)
     if not (player and player.valid) then
         return
     end
@@ -1311,39 +1341,17 @@ function Public.forfeit_impl.open_dialog(player, automatic, final_confirm, death
         return
     end
     Public.forfeit_impl.destroy_dialog(player)
-    local frame = player.gui.screen.add({
-        type = 'frame',
-        name = forfeit_frame_name,
-        caption = {'expanse.forfeit_title'},
-        direction = 'vertical'
-    })
-    frame.style.minimal_width = FORFEIT_DIALOG_WIDTH
-    frame.style.maximal_width = FORFEIT_DIALOG_WIDTH
-    Public.forfeit_impl.position_dialog(player, frame)
-    local body = frame.add({
-        type = 'label',
-        caption = final_confirm and {'expanse.forfeit_final_body'} or (automatic and {'expanse.forfeit_auto_body', death_count or FORFEIT_DEATH_THRESHOLD} or {'expanse.forfeit_body'})
-    })
-    body.style.single_line = false
-    body.style.maximal_width = 440
-    body.style.bottom_margin = 8
-
-    local buttons = frame.add({ type = 'flow', direction = 'horizontal' })
-    buttons.style.horizontal_align = 'center'
-    buttons.style.horizontal_spacing = 8
-    buttons.add({
-        type = 'button',
-        name = final_confirm and forfeit_final_confirm_button_name or forfeit_confirm_button_name,
-        caption = final_confirm and {'expanse.forfeit_final_confirm'} or {'expanse.forfeit_confirm'},
-        style = 'confirm_button'
-    })
-    buttons.add({
-        type = 'button',
-        name = forfeit_cancel_button_name,
-        caption = {'expanse.forfeit_cancel'}
-    })
-    player.opened = frame
+    Public.forfeit_impl.dialog.open(player, automatic and (death_count or FORFEIT_DEATH_THRESHOLD) or nil)
 end
+
+Public.forfeit_impl.dialog.inject(function(player)
+    local state = Public.forfeit_impl.state_from_player_force(player)
+    if state then
+        Public.forfeit_impl.run(state, player)
+    else
+        player.print('Join a Multi-Team Support team before forfeiting Expanse.')
+    end
+end)
 
 function Public.forfeit_impl.inventory_item_count(inventory)
     local count = 0
@@ -1476,6 +1484,9 @@ function Public.forfeit_impl.is_preserved_force_entity(state, entity)
         return true
     end
     if state.landing_pad and state.landing_pad.valid and entity == state.landing_pad then
+        return true
+    end
+    if Missions.cargo.owns(state, entity) then
         return true
     end
     for _, silo in pairs(state.rocket_silos or {}) do
@@ -1665,7 +1676,7 @@ function Public.forfeit_impl.on_player_died(event)
     expanse.forfeit_player_deaths[key] = entry
 
     if entry.count >= FORFEIT_DEATH_THRESHOLD then
-        Public.forfeit_impl.open_dialog(player, true, false, entry.count)
+        Public.forfeit_impl.open_dialog(player, true, entry.count)
         entry.last_prompt_tick = game.tick
     end
 end
@@ -1806,10 +1817,6 @@ local function on_gui_opened(event)
 end
 
 local function on_gui_closed(event)
-    if event.element and event.element.valid and event.element.name == forfeit_frame_name then
-        event.element.destroy()
-        return
-    end
     container_opened(event)
 end
 
@@ -1833,7 +1840,7 @@ local function uranium_mining(entity, state)
     if tank and tank.valid then
         local acid = tank.get_fluid_count('sulfuric-acid')
         if acid > 5 then
-            tank.remove_fluid { name = 'sulfuric-acid', amount = 4 }
+            tank.extract_fluid { name = 'sulfuric-acid', amount = 4 }
             entity.surface.spill_item_stack({position = entity.position, stack ={ name = 'uranium-ore', count = 4 }, enable_looted = true, allow_belts = true})
             FT.flying_text(nil, entity.surface, tank.position, '-4 [fluid=sulfuric-acid]', { r = 0.88, g = 0.02, b = 0.02 })
         end
@@ -2109,12 +2116,14 @@ end
 
 -- ── MTS event integration ────────────────────────────────────────────
 -- Expanse consumes several mts-v1 custom events (welcome tab, team join, team
--- created). Their ids are dynamic (script.generate_event_name in MTS), so we fetch
--- them via remote.call where that's legal (on_init / on_configuration_changed), cache
--- them in storage, and (re-)register the handlers from on_init / on_load /
--- on_configuration_changed. Multiplayer-safe: no remote.call in on_load, and every peer
--- registers the same handlers for the same ids right after load. Degrades cleanly on an
--- older MTS that lacks an event (pcall + nil id -> that handler simply isn't registered).
+-- released). Their ids come from script.generate_event_name in MTS, so they move
+-- whenever a mod that loads before MTS creates more or fewer custom events. They
+-- are therefore looked up every session (on_init / on_load / on_configuration_changed)
+-- and never stored: a stored id from an older mod list points at a different MTS
+-- event. remote.call is legal in on_load (measured on 2.0.77), and every peer gets
+-- the same ids from the same mod list, so the registration matches on join.
+-- Degrades cleanly on an older MTS that lacks an event (pcall + nil id -> that
+-- handler simply isn't registered).
 local EXPANSE_TAB_NAME = 'mts-expanse'
 
 local function draw_welcome_tab(element)
@@ -2231,31 +2240,29 @@ local MTS_EVENT_HANDLERS = {
     on_team_tab_built     = on_mts_team_tab_built,
 }
 
--- on_init / on_load / on_configuration_changed. Reads cached ids from storage and
--- (re-)registers every handler -- no remote.call, so it is safe in on_load.
+-- on_init / on_load / on_configuration_changed. Asks MTS for this session's ids and
+-- (re-)registers every handler. Reads nothing from storage, so it is safe in on_load.
 local function register_mts_event_handlers()
     -- Under MTS the Expanse settings/intro live in MTS's panels (welcome + team tab),
     -- so suppress the Comfy top "menu" (raw-fish) button. Set every session (incl.
     -- on_load) before any player is created; in standalone the fish button stays.
     Gui.top_button_enabled = not is_mts_active()
-    local ids = storage.expanse_mts_event_ids
-    if not ids then
+    if not is_mts_active() then
         return
     end
     for name, handler in pairs(MTS_EVENT_HANDLERS) do
-        local id = ids[name]
-        if id then
+        local ok, id = pcall(remote.call, MTS_INTERFACE, 'get_event_id', name)
+        if ok and type(id) == 'number' then
             script.on_event(id, handler)
         end
     end
 end
 
--- Call only from on_init / on_configuration_changed (remote.call is legal there).
 -- Set once per session. setup_mts_events registers the welcome/team tabs and milestones via
--- remote.call (legal in on_init/on_configuration_changed/on_tick, NOT on_load). Re-running it
--- from on_tick after a plain reload self-heals registration -- milestones added since the
--- save's last on_init/on_configuration_changed get registered without a new game or a version
--- bump. All the registrations are idempotent (they overwrite registry entries).
+-- remote.call. Re-running it from on_tick after a plain reload self-heals registration --
+-- milestones added since the save's last on_init/on_configuration_changed get registered
+-- without a new game or a version bump. All the registrations are idempotent (they overwrite
+-- registry entries). Event handlers are not part of this: see register_mts_event_handlers.
 local mts_setup_done = false
 
 local function setup_mts_events()
@@ -2293,15 +2300,16 @@ local function setup_mts_events()
         noun       = 'rock',
         thresholds = MINE_THRESHOLDS,
     })
-    local ids = {}
-    for name in pairs(MTS_EVENT_HANDLERS) do
-        local ok, id = pcall(remote.call, MTS_INTERFACE, 'get_event_id', name)
-        if ok and type(id) == 'number' then
-            ids[name] = id
-        end
-    end
-    storage.expanse_mts_event_ids = ids
+    -- Ids stored by releases up to 0.1.23 belong to the mod list of that save.
+    storage.expanse_mts_event_ids = nil
     register_mts_event_handlers()
+end
+
+-- The welcome text gains a paragraph about space missions when they exist.
+-- Stored in the map info table, so it is set on init and on every update.
+function Public.surface_impl.set_welcome_text()
+    local T = Map_info.get_map_information()
+    T.text = SpaceMissions.enabled() and { '', { 'expanse.map_info_text' }, '\n\n', { 'expanse.map_info_text_space' } } or nil
 end
 
 local function on_init()
@@ -2311,6 +2319,7 @@ local function on_init()
     T.localised_category = 'expanse'
     T.main_caption_color = { r = 170, g = 170, b = 0 }
     T.sub_caption_color = { r = 120, g = 120, b = 0 }
+    Public.surface_impl.set_welcome_text()
 
     apply_world_settings()
     if is_mts_active() then
@@ -2337,8 +2346,13 @@ local function on_configuration_changed(_event)
         end
     end
 
+    Public.surface_impl.set_welcome_text()
     for _, player in pairs(game.players) do
         create_button(player)
+        Public.forfeit_impl.destroy_dialog(player)
+        if player.gui.screen[missions_frame_name] then
+            player.gui.screen[missions_frame_name].destroy()
+        end
     end
     for _, state in iter_states() do
         -- Older releases queued an automatic map reset after victory. Cancel
@@ -2351,6 +2365,9 @@ local function on_configuration_changed(_event)
         end
         state.schedule = schedule
         state.map_reset_delay_ticks = nil
+        SpaceMissions.migrate_gaia_rewards(state)
+        SpaceMissions.sync_unlocks(state)
+        SpaceMissions.ban_recipes(state)
         if not Public.surface_impl.active(state) then
             Public.surface_impl.destroy_overlay(state)
             local force = game.forces[state_key(state)]
@@ -2657,6 +2674,9 @@ local function process_state_tick(state)
     end
     if SpaceMissions.enabled() then
         SpaceMissions.ensure_support(state)
+        -- Stations load their rockets first, so a load completed this second
+        -- leaves this second.
+        Missions.tick(state)
         SpaceMissions.launch_rockets(state)
         if game.tick % state.space_production_interval_ticks == 0 then
             SpaceMissions.produce_space_goods(state)
@@ -2667,8 +2687,8 @@ local function process_state_tick(state)
 end
 
 local function on_tick()
-    -- Self-heal MTS registration after a plain reload (on_load can't remote.call). Runs once
-    -- per session; on_init / on_configuration_changed already set the flag on those paths.
+    -- Self-heal MTS tab and milestone registration after a plain reload. Runs once per
+    -- session; on_init / on_configuration_changed already set the flag on those paths.
     if not mts_setup_done then
         setup_mts_events()
     end
@@ -2744,145 +2764,6 @@ local function update_resource_gui(event)
     end
 end
 
-local function mission_stats(parent, name, quality, count, delivered, state)
-    local color = prototypes.quality[quality].color
-    local tooltip = {'expanse.colored_text', color.r, color.g, color.b, Functions.get_item_tooltip(name, quality, false, state and state_force(state) or nil)}
-    local button = parent.add({ type = 'sprite-button', name = name .. '|' .. quality .. '_sprite', sprite = 'item/' .. name, quality = quality, enabled = false, tooltip = tooltip })
-    local label = parent.add({ type = 'label', name = name .. '|' .. quality .. '_label', caption = {'expanse.missions_progress', format_number(tonumber(delivered), true), format_number(tonumber(count), true)} })
-    label.style.minimal_width = 40
-    label.style.font_color = delivered == count and {r = 0, g = 0.88, b = 0} or {r = 0.88, g = 0, b = 0}
-    return button, label
-end
-
-local function mission_rewards(parent, type, reward)
-    local type_sprites = {
-        ['research'] = 'virtual-signal/signal-science-pack',
-        ['production'] = 'virtual-signal/signal-clockwise-circle-arrow',
-        ['once'] = 'virtual-signal/signal-1',
-        ['script'] = 'virtual-signal/signal-check'
-    }
-    local things = {''}
-    if type == 'research' then
-        for tech, progress in pairs(reward) do
-            things = {'', things, {'expanse.missions_reward_tech', tech, {'technology-name.' .. tech}, progress * 100}}
-        end
-    elseif type == 'script' then
-        for thing, value in pairs(reward) do
-            things = {'', things, {'expanse.script-' .. thing, value}}
-            things = {'', things, '\n'}
-            if thing == 'new-ship' then
-                things = {'', things, {'expanse.ship-desc-' .. value}}
-                things = {'', things, '\n'}
-            end
-        end
-    elseif type == 'production' or type == 'once' then
-        for qname, count in pairs(reward) do
-            local name, quality = Functions.split_key(qname)
-            things = {'', things, count}
-            things = {'', things, ' [item=' .. name .. ',quality=' .. quality .. ']\n'}
-        end
-    end
-    local tooltip = {'expanse.missions_reward_tooltip', {'expanse.missions_reward_' .. type}, things}
-    local type_button = parent.add({ type = 'sprite-button', sprite = type_sprites[type], name = 'reward|' .. type, tooltip = tooltip, enabled = false})
-    return type_button
-end
-
-local function create_missions_frame(player, location, selected_tab_index)
-    if not SpaceMissions.enabled() then
-        destroy_missions_gui(player)
-        player.print('Space missions are only available when Space Age is enabled.')
-        return
-    end
-    local state = state_from_player(player)
-    if not state then
-        player.print('Join a Multi-Team Support team before opening Expanse.')
-        return
-    end
-    ensure_state_ready(state)
-    local frame, inside_frame = Gui.add_main_frame_with_toolbar(player, 'screen', missions_frame_name, false, close_missions_button_name, { 'expanse.missions_gui' })
-    --local frame = player.gui.screen.add({ type = 'frame', name = missions_frame_name, caption = { 'expanse.missions_gui' }, direction = 'vertical' })
-    if not frame or not inside_frame then return end
-    local pane = inside_frame.add({ type = 'tabbed-pane', name = 'missions_tab_pane' })
-    frame.location = location or { x = 210, y = 50 }
-    frame.style.maximal_height = 600
-    local prod_tab = pane.add({ type = 'tab', caption = 'Production', name = 'mission_tab_prod', style = 'slightly_smaller_tab' })
-    local prod_frame = pane.add({ type = 'frame', name = 'prod_frame', direction = 'vertical', style = 'mod_gui_inside_deep_frame' })
-    prod_frame.style.padding = 8
-    prod_frame.style.horizontally_stretchable = true
-    prod_frame.style.vertically_stretchable = true
-    pane.add_tab(prod_tab, prod_frame)
-    prod_frame.add({ type = 'label', caption = {'expanse.production_label'}, name = 'prod_label'})
-    local prod_table = prod_frame.add({ type = 'table', name = 'prod_table', column_count = 10 })
-    for qname, count in pairs(state.space_production) do
-        local name, quality = Functions.split_key(qname)
-        resource_stats(prod_table, name, quality, count, state)
-    end
-    for i = 4, SA and 10 or 5, 1 do
-        local req = MissionData.mission_unlocks[i]
-        local level = state.missions[i].level
-        local tab = pane.add({ type = 'tab', caption = 'M' .. i, name = 'mission_tab_' .. i, style = 'slightly_smaller_tab' })
-        local mission_frame = pane.add({ type = 'frame', name = 'mission_frame' .. i, direction = 'vertical', style = 'mod_gui_inside_deep_frame' })
-        mission_frame.style.padding = 8
-        mission_frame.style.horizontally_stretchable = true
-        mission_frame.style.vertically_stretchable = true
-        pane.add_tab(tab, mission_frame)
-        local mission_table = mission_frame.add({ type = 'table', name = 'mission_table' .. i, column_count = 2})
-        mission_table.add({ type = 'sprite-button', name = 'tier' .. i, sprite = 'virtual-signal/signal-' .. (i < 10 and i or 0), tooltip = {'expanse.missions_tier', i, level}, enabled = false })
-        mission_table.add({ type = 'label', name = 'mission_label' .. i, caption = {'expanse.missions_tier', i, level} })
-        mission_table.add({ type = 'sprite-button', name = 'mission_unlock' .. i, sprite = 'virtual-signal/signal-info', enabled = false})
-
-        local lore_table = mission_table.add({ type = 'table', name = 'lore_table' .. i, column_count = 2})
-        lore_table.add({ type = 'sprite-button', name = 'lore-unlock' .. i, sprite = 'virtual-signal/signal-unlock', enabled = false})
-        lore_table.add({ type = 'label', name = 'lore-' .. i .. '-u', caption = {'expanse.missions_reqs', req, {'technology-name.' .. req}} })
-        -- for s = 0, level, 1 do
-        --     local sprite = (s == level) and 'virtual-signal/signal-hourglass' or 'virtual-signal/signal-check'
-        --     lore_table.add({ type = 'sprite-button', name = 'lore-' .. i .. '-' .. s, sprite = sprite, enabled = false})
-        --     lore_table.add({ type = 'label', name = 'lore-label-' .. i .. '-' .. s, caption = {'expanse-lore.m' .. i .. '-' .. s}})
-        -- end
-
-        mission_table.add({ type = 'sprite-button', name = 'dummy' .. i, sprite = 'item/rocket-part', enabled = false, tooltip = {'expanse.missions_mission'} })
-        local tier_table = mission_table.add({ type = 'table', name = 'mission_reqs' .. i, column_count = 10 })
-        mission_table.add({ type = 'sprite-button', name = 'reward' .. i, sprite = 'virtual-signal/signal-output', enabled = false, tooltip = {'expanse.missions_reward'}})
-        local reward_table = mission_table.add({ type = 'table', name = 'reward_table' .. i, column_count = 10})
-        if level > 0 then
-            local costs = SA and MissionData.costs[i] or MissionData.nonspace_costs[i]
-            for qname, count in pairs(costs[state.missions[i].level]) do
-                local name, quality = Functions.split_key(qname)
-                local delivered = state.missions[i].delivered[qname] or 0
-                mission_stats(tier_table, name, quality, count, delivered, state)
-            end
-            local rewards = SA and MissionData.rewards[i] or MissionData.nonspace_rewards[i]
-            for type, reward in pairs(rewards[level]) do
-                mission_rewards(reward_table, type, reward)
-            end
-        end
-    end
-    pane.selected_tab_index = selected_tab_index or 1
-end
-
-local function update_mission_gui(event)
-    if not SpaceMissions.enabled() then
-        for _, player in pairs(game.connected_players) do
-            destroy_missions_gui(player)
-        end
-        return
-    end
-    for _, player in pairs(game.connected_players) do
-        if player.gui.screen[missions_frame_name] then
-            local state = state_from_player(player)
-            if not state or (event.force_name and state_key(state) ~= event.force_name) then
-                goto continue
-            end
-            local frame = player.gui.screen[missions_frame_name]
-            local location = frame.location
-            local selected_tab_index = frame['inside_frame']['missions_tab_pane'].selected_tab_index
-            frame.destroy()
-            create_missions_frame(player, location, selected_tab_index)
-        end
-        ::continue::
-    end
-end
-
 local function on_gui_click(event)
     local element = event.element
     if not element.valid then
@@ -2893,24 +2774,6 @@ local function on_gui_click(event)
 
     if name == forfeit_button_name then
         Public.forfeit_impl.open_dialog(player, false)
-        return
-    end
-    if name == forfeit_cancel_button_name then
-        Public.forfeit_impl.destroy_dialog(player)
-        return
-    end
-    if name == forfeit_confirm_button_name then
-        Public.forfeit_impl.open_dialog(player, false, true)
-        return
-    end
-    if name == forfeit_final_confirm_button_name then
-        local state = Public.forfeit_impl.state_from_player_force(player)
-        Public.forfeit_impl.destroy_dialog(player)
-        if state then
-            Public.forfeit_impl.run(state, player)
-        else
-            player.print('Join a Multi-Team Support team before forfeiting Expanse.')
-        end
         return
     end
 
@@ -2928,11 +2791,13 @@ local function on_gui_click(event)
             player.print('Space missions are only available when Space Age is enabled.')
             return
         end
-        if player.gui.screen[missions_frame_name] then
-            player.gui.screen[missions_frame_name].destroy()
-        else
-            create_missions_frame(player)
+        local state = state_from_player(player)
+        if not state then
+            player.print('Join a Multi-Team Support team before opening Expanse.')
+            return
         end
+        ensure_state_ready(state)
+        Missions.board.toggle(player, state)
         return
     end
 end
@@ -2943,16 +2808,7 @@ local function on_research_finished(event)
     local state = state_from_force_name(force.name)
     if not state then return end
     if not SpaceMissions.enabled() then return end
-    local banned_items = {
-        ['cargo-landing-pad'] = (not state.landing_pad or not state.landing_pad.valid) and true or false,
-        ['rocket-silo'] = true,
-        ['atomic-bomb'] = true
-    }
-    for recipe, state in pairs(banned_items) do
-        if state == true then
-            force.recipes[recipe].enabled = false
-        end
-    end
+    SpaceMissions.ban_recipes(state)
     for tier, name in pairs(MissionData.mission_unlocks) do
         if research.name == name then
             SpaceMissions.unlock_mission_tier(state, tier)
@@ -3010,9 +2866,12 @@ end
 local function state_from_command(player, parameter)
     local force_name = parameter and parameter:match('^%s*(team%-%d+)%s*$')
     if force_name then
-        return state_from_force_name(force_name)
+        return Public.forfeit_impl.command_state(force_name)
     end
-    return player and player.valid and state_from_player(player) or expanse
+    if player and player.valid then
+        return state_from_player(player)
+    end
+    return Public.forfeit_impl.command_state(nil)
 end
 
 local function parse_admin_number(value)
@@ -3168,7 +3027,10 @@ commands.add_command(
 				    map_reset({ force_name = state_key(state) })
 				    state_print(state, (player and player.name or 'Server') .. ' has reset the map.')
                 elseif player and player.valid then
-                    player.print('Join a Multi-Team Support team before resetting Expanse.')
+                    player.print('Join a Multi-Team Support team before resetting Expanse, or name an existing team: /expanse-reset team-N')
+                else
+                    rcon.print('No such Expanse team. Usage: /expanse-reset team-N')
+                    log('[mts-expanse] reset refused: no such Expanse team')
                 end
 			end
 		end
@@ -3189,7 +3051,11 @@ function Public.forfeit_impl.command(event)
                 player.print('Usage: /expanse-forfeit confirm or /expanse-forfeit team-N confirm')
                 return
             end
-            state = state_from_force_name(args[1])
+            state = Public.forfeit_impl.command_state(args[1])
+            if not state then
+                player.print('No Expanse team named ' .. args[1] .. '.')
+                return
+            end
         else
             state = Public.forfeit_impl.state_from_player_force(player)
             if args[1] ~= 'confirm' then
@@ -3198,7 +3064,18 @@ function Public.forfeit_impl.command(event)
             end
         end
     else
-        state = state_from_force_name(args[1] or DEFAULT_FORCE_NAME)
+        -- Server console and RCON: same confirm word as players, and never the
+        -- default state under MTS.
+        local team = is_team_force_name(args[1]) and args[1] or nil
+        local usage = is_mts_active() and 'Usage: /expanse-forfeit team-N confirm' or 'Usage: /expanse-forfeit confirm'
+        if args[team and 2 or 1] ~= 'confirm' then
+            rcon.print(usage)
+            return
+        end
+        state = Public.forfeit_impl.command_state(team)
+        if not state then
+            rcon.print('No such Expanse team. ' .. usage)
+        end
     end
 
     if state then
@@ -3329,13 +3206,19 @@ commands.add_command(
 	)
 	
 	function Public.reset(force_name)
-        local state = force_name and state_from_force_name(force_name) or expanse
+        local state = Public.forfeit_impl.api_state(force_name)
+        if not state then
+            return false, 'name a team: the default Expanse state is not used with Multi-Team Support'
+        end
 	    map_reset({ force_name = state_key(state) })
 	    return true
 	end
 
     function Public.forfeit(force_name)
-        local state = force_name and state_from_force_name(force_name) or expanse
+        local state = Public.forfeit_impl.api_state(force_name)
+        if not state then
+            return false, 'name a team: the default Expanse state is not used with Multi-Team Support'
+        end
         local counts, err = Public.forfeit_impl.run(state)
         if not counts then
             return false, err
@@ -3632,7 +3515,7 @@ commands.add_command(
             }
         end
         entity.destructible = false
-        entity.minable = false
+        entity.minable_flag = false
         local created_position = { x = entity.position.x, y = entity.position.y }
 
         state.containers = state.containers or {}
@@ -4930,7 +4813,6 @@ Event.add(defines.events.on_runtime_mod_setting_changed, on_runtime_mod_setting_
 Event.add(defines.events.on_object_destroyed, infini_resource2)
 Event.add(defines.events.on_entity_damaged, on_entity_damaged)
 Event.add(Public.events.gui_update, update_resource_gui)
-Event.add(Public.events.mission_gui_update, update_mission_gui)
 Event.add(Public.events.invasion_warn, Functions.invasion_warn)
 Event.add(Public.events.invasion_detonate, Functions.invasion_detonate)
 Event.add(Public.events.invasion_trigger, Functions.invasion_trigger)

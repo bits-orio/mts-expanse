@@ -106,6 +106,9 @@ local function create_map_intro(data)
     l_3.style.single_line = false
     l_3.style.font_color = { r = 0.85, g = 0.85, b = 0.88 }
     l_3.style.minimal_width = 780
+    -- Without a maximum a paragraph stays on one line and the window grows as
+    -- wide as the screen. With it the text wraps at the window's own width.
+    l_3.style.maximal_width = 780
     l_3.style.horizontal_align = 'center'
     l_3.style.vertical_align = 'center'
 end

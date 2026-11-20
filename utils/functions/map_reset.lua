@@ -2,6 +2,7 @@ local Server = require 'utils.server'
 local Modifiers = require 'utils.player_modifiers'
 local Global = require 'utils.global'
 local Event = require 'utils.event'
+local BodyTeleport = require 'utils.body_teleport'
 
 local Public = {}
 local this = {}
@@ -128,7 +129,7 @@ function Public.change_entities_to_neutral(surface, force, delete_pollution)
     for _, entity in pairs(entities) do
         if entity.valid then
             entity.force = 'neutral'
-            entity.active = false
+            entity.disabled_by_script = true
         end
     end
     if delete_pollution then
@@ -172,9 +173,9 @@ local function teleport_players(surface, small_force_chunk)
         end
         if not small_force_chunk then
             local pos = surface.find_non_colliding_position('character', spawn, 3, 0.5)
-            player.teleport(pos, surface)
+            BodyTeleport.to(player, pos, surface)
         else
-            player.teleport({ x = 0, y = 0 }, surface)
+            BodyTeleport.to(player, { x = 0, y = 0 }, surface)
         end
     end
 end

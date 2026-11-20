@@ -12,11 +12,11 @@ function Public.install(Expanse, mts)
     end
     local function contents(silo)
         local result = {}
-        for name, id in pairs(defines.inventory) do
-            if name:match('^rocket_silo') then
-                local inv = silo.get_inventory(id)
-                if inv then result[name] = inv.get_contents() end
-            end
+        -- Named one by one: the cargo unit of a standing rocket is an inventory
+        -- of its own, and a repaired silo has no rocket yet.
+        for _, name in ipairs({'crafter_input', 'crafter_output', 'crafter_modules', 'rocket_silo_rocket', 'rocket_silo_trash'}) do
+            local inv = silo.get_inventory(defines.inventory[name])
+            if inv then result[name] = inv.get_contents() end
         end
         return helpers.table_to_json(result)
     end
@@ -64,8 +64,8 @@ function Public.install(Expanse, mts)
                 assert(silo.get_inventory(defines.inventory.rocket_silo_rocket).insert{name='space-platform-foundation',count=50}==50)
             end
             local old = a.broken
-            old.get_inventory(defines.inventory.rocket_silo_modules).insert{name='productivity-module-2',quality='rare',count=4}
-            old.get_inventory(defines.inventory.rocket_silo_input).insert{name='processing-unit',count=7}
+            old.get_inventory(defines.inventory.crafter_modules).insert{name='productivity-module-2',quality='rare',count=4}
+            old.get_inventory(defines.inventory.crafter_input).insert{name='processing-unit',count=7}
             old.get_inventory(defines.inventory.rocket_silo_trash).insert{name='yumako',quality='uncommon',count=3}
             old.health=1000;old.disabled_by_script=true;old.use_transitional_requests=false
             old.crafting_progress=0.25;old.bonus_progress=0.375

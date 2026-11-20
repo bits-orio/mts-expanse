@@ -5,7 +5,12 @@ local SpaceMissions = require 'maps.expanse.space_missions'
 local Task = require 'utils.task'
 local Token = require 'utils.token'
 local ExpanseEvents = require 'maps.expanse.events'
+local format_number = require 'util'.format_number
+local ChestTooltip = require 'maps.expanse.chest_tooltip'
 local Public = {}
+
+-- main.lua is at Lua's 200-local limit, so it reaches this through Functions.
+Public.teleport_body = require 'utils.body_teleport'.to
 
 local ores = { 'copper-ore', 'iron-ore', 'stone', 'coal' }
 local price_modifiers = {
@@ -255,7 +260,23 @@ local function is_container_position_valid(expanse, position, left_top)
     return left_top
 end
 
-local function create_costs_render(entity, name, offset, quality)
+-- The number under a price icon: how many of that item the chest still wants.
+local COUNT_TEXT_OFFSET_Y = -0.95
+
+local function create_count_render(entity, offset, count)
+    return rendering.draw_text {
+        text = format_number(count, true),
+        surface = entity.surface,
+        target = { entity = entity, offset = { offset, COUNT_TEXT_OFFSET_Y } },
+        color = { 1, 1, 1 },
+        scale = 0.9,
+        alignment = 'center'
+    }
+end
+
+-- Icon, quality pip and remaining count of one price line. Visible without Alt
+-- mode: the count is what a player needs to plan a delivery.
+local function create_costs_render(entity, name, offset, quality, count)
     local id = rendering.draw_sprite {
         sprite = 'virtual-signal/signal-grey',
         surface = entity.surface,
@@ -265,8 +286,7 @@ local function create_costs_render(entity, name, offset, quality)
         },
         x_scale = 1.1,
         y_scale = 1.1,
-        render_layer = '190',
-        only_in_alt_mode = true
+        render_layer = '190'
     }
     local id2 = rendering.draw_sprite {
         sprite = 'item/' .. name,
@@ -277,8 +297,7 @@ local function create_costs_render(entity, name, offset, quality)
         },
         x_scale = 0.75,
         y_scale = 0.75,
-        render_layer = '191',
-        only_in_alt_mode = true
+        render_layer = '191'
     }
     local Q = script.active_mods['quality']
     local id3 = rendering.draw_sprite {
@@ -290,23 +309,34 @@ local function create_costs_render(entity, name, offset, quality)
         },
         x_scale = 0.25,
         y_scale = 0.25,
-        render_layer = Q and '192' or '189',
-        only_in_alt_mode = true
+        render_layer = Q and '192' or '189'
     }
 
-    return { id, id2, id3}
+    return { id, id2, id3, create_count_render(entity, offset, count) }
+end
+
+-- Keeps the count under the icon current. Chests priced by releases up to
+-- 0.1.23 have Alt-only icons and no count; both are brought up to date here.
+local function update_count_render(container, price)
+    local render = price.render
+    if not (render and render[2] and render[2].valid) then
+        return
+    end
+    if render[4] and render[4].valid then
+        render[4].text = format_number(price.count, true)
+        return
+    end
+    for index = 1, 3 do
+        if render[index] and render[index].valid then render[index].only_in_alt_mode = false end
+    end
+    render[4] = create_count_render(container.entity, render[2].target.offset.x or render[2].target.offset[1], price.count)
 end
 
 local function remove_one_render(container, key)
-    local render = container.price[key] and container.price[key].render or {}
-    if render[1] and render[1].valid then
-        render[1].destroy()
-    end
-    if render[2] and render[2].valid then
-        render[2].destroy()
-    end
-    if render[3] and render[3].valid then
-        render[3].destroy()
+    for _, render in pairs(container.price[key] and container.price[key].render or {}) do
+        if render.valid then
+            render.destroy()
+        end
     end
 end
 
@@ -470,7 +500,7 @@ local function create_frontier_chest(expanse, surface, candidate)
         return false
     end
     entity.destructible = false
-    entity.minable = false
+    entity.minable_flag = false
     register_container(expanse, entity, unlock_left_top)
     return true
 end
@@ -1352,7 +1382,7 @@ local function init_container(expanse, entity, budget, known_left_top)
     local price = {}
     local offset = -3
     for _, entry in ipairs(price_entries) do
-        table.insert(price, { name = entry.name, count = entry.count, quality = entry.quality, render = create_costs_render(entity, entry.name, offset, entry.quality) })
+        table.insert(price, { name = entry.name, count = entry.count, quality = entry.quality, render = create_costs_render(entity, entry.name, offset, entry.quality, entry.count) })
         offset = offset + 1
     end
     if _DEBUG then
@@ -1395,11 +1425,15 @@ local function price_request_signature(price)
 end
 
 local function sync_container_requests(container, force)
+    local signature = price_request_signature(container.price)
+    if container.tooltip_signature ~= signature then
+        ChestTooltip.set(container.entity, container.price)
+        container.tooltip_signature = signature
+    end
     local logi = container.entity.get_logistic_point(defines.logistic_member_index.logistic_container)
     if not logi then
         return
     end
-    local signature = price_request_signature(container.price)
     if not force and container.request_signature == signature then
         return
     end
@@ -1464,7 +1498,8 @@ function Public.set_container(expanse, entity, known_left_top, reveal)
                 remove_old_renders(container)
                 init_container(expanse, entity, remaining_budget, container.left_top)
                 container = expanse.containers[entity.unit_number]
-                game.print({ 'expanse.chest_reset', { 'expanse.gps', math.floor(entity.position.x), math.floor(entity.position.y), game.surfaces[expanse.active_surface_index].name } })
+                -- Only the chest's own team: the ping points at their surface.
+                state_force(expanse).print({ 'expanse.chest_reset', { 'expanse.gps', math.floor(entity.position.x), math.floor(entity.position.y), game.surfaces[expanse.active_surface_index].name } })
             end
         end
         if _DEBUG and inventory.get_item_count('infinity-chest') > 0 then
@@ -1479,6 +1514,9 @@ function Public.set_container(expanse, entity, known_left_top, reveal)
         local quality = item_stack.quality
         local count_removed = inventory.remove({ name = name, count = item_stack.count, quality = item_stack.quality})
         container.price[key].count = container.price[key].count - count_removed
+        if count_removed > 0 or not (item_stack.render and item_stack.render[4]) then
+            update_count_render(container, item_stack)
+        end
         if count_removed > 0 then
             expanse.cost_stats[Public.make_key(name, quality)] = (expanse.cost_stats[Public.make_key(name, quality)] or 0) + count_removed
             script.raise_event(ExpanseEvents.gui_update, { item = name, quality = quality, force_name = expanse.force_name})
