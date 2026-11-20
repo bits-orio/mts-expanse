@@ -1,0 +1,10 @@
+{
+  "mod": "mts-expanse",
+  "title": "MTS Expanse",
+  "summary": "Tiny-island Expanse gameplay from ComfyFactorio, as a mod: feed hungry chests to unlock land one cell at a time, survive invasions, and in Space Age supply seven ships by rocket. Play solo or co-op, or race teams on a multiplayer server with Multi-Team Support (optional).",
+  "category": "overhaul",
+  "tags": ["environment", "enemies", "logistic-network"],
+  "license": "default_gnugplv3",
+  "homepage": "https://discord.gg/tWz4FT74pH",
+  "source_url": "https://github.com/zzh8829/mts-expanse"
+}
