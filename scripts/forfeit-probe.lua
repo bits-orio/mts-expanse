@@ -14,8 +14,17 @@ local function offer(container)
     return helpers.table_to_json(items)
 end
 
-local function inventory_empty(character)
-    return character.get_inventory(defines.inventory.character_main).is_empty()
+-- After a reset a character holds the starting items and nothing else.
+local function holds_only_kit(Expanse, character)
+    local expected, held = 0, 0
+    for _, item in pairs(Expanse.forfeit_impl.kit.items()) do
+        if character.get_item_count(item.name) ~= item.count then return false end
+        expected = expected + item.count
+    end
+    for _, id in ipairs({defines.inventory.character_main, defines.inventory.character_guns, defines.inventory.character_ammo, defines.inventory.character_armor, defines.inventory.character_trash}) do
+        held = held + character.get_inventory(id).get_item_count()
+    end
+    return expected > 0 and held == expected
 end
 
 local function seed_enemies(surface)
@@ -67,6 +76,17 @@ function Public.install(Expanse)
         for _, character in ipairs(storage.forfeit_test.characters or {}) do
             if character.valid and character.force == force then
                 count = count + Expanse.forfeit_impl.clear_player_inventory(character)
+            end
+        end
+        return count
+    end
+    local restore_kits = Expanse.forfeit_impl.restore_kits
+    Expanse.forfeit_impl.restore_kits = function(force, player)
+        local count = restore_kits(force, player)
+        for index, character in ipairs(storage.forfeit_test.characters or {}) do
+            if character.valid and character.force == force then
+                Expanse.forfeit_impl.kit.give(character, index == 1)
+                count = count + 1
             end
         end
         return count
@@ -157,6 +177,7 @@ function Public.install(Expanse)
                 neutral_storage_untouched = audit.neutral.get_inventory(defines.inventory.chest).get_item_count('copper-plate') == 17,
                 queues_empty = true,
                 refunds_removed = true,
+                starting_items_given_back = true,
                 no_spilled_refunds = surface.count_entities_filtered{type='item-entity'} == 0,
                 surface_and_progress_preserved = surface.index == audit.surface and state.size == audit.size and game.forces[target].technologies.automation.researched
             }
@@ -166,7 +187,8 @@ function Public.install(Expanse)
             helpers.write_file('forfeit-enemies.json',helpers.table_to_json({types=audit.enemy_types, results=audit.results}))
             for _, character in ipairs(audit.characters) do
                 audit.results.queues_empty = audit.results.queues_empty and character.crafting_queue_size == 0
-                audit.results.refunds_removed = audit.results.refunds_removed and inventory_empty(character)
+                audit.results.refunds_removed = audit.results.refunds_removed and holds_only_kit(Expanse, character)
+                audit.results.starting_items_given_back = audit.results.starting_items_given_back and character.get_item_count('pistol') == 1
             end
             -- Repeating forfeit must remain safe and leave offers usable.
             assert(Expanse.forfeit_impl.run(state))
@@ -175,7 +197,7 @@ function Public.install(Expanse)
             audit.results.no_delayed_enemies = surface.count_entities_filtered{force='enemy'} == 0
             audit.results.no_delayed_crafts = true
             for _, character in ipairs(audit.characters) do
-                audit.results.no_delayed_crafts = audit.results.no_delayed_crafts and character.crafting_queue_size == 0 and inventory_empty(character)
+                audit.results.no_delayed_crafts = audit.results.no_delayed_crafts and character.crafting_queue_size == 0 and holds_only_kit(Expanse, character)
             end
             helpers.write_file('forfeit-result.json',helpers.table_to_json(audit.results))
             audit.done = true
