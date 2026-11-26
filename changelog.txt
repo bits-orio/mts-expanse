@@ -1,4 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.26
+Date: 26. 11. 2026
+  Bugfixes:
+    - A mission silo with "Automatic requests from space platforms" ticked no longer stalls its
+      mission. A rocket in that mode takes no cargo from the cargo chest, so the box is now
+      switched back off on mission silos and the chest loads the rocket as usual.
+    - A base reset gives every team member the starting items back, armor equipment included.
+      With Multi-Team Support these are its starter items; items it grants once per team go to
+      the player who reset. The reset dialog says so.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.25
 Date: 19. 11. 2026
   Major Features:
