@@ -169,6 +169,10 @@ end
 function Public.tick(state, data)
     local silo = data.entity
     if not (silo and silo.valid) or not ensure_station(data) then return end
+    -- "Automatic requests from space platforms" makes the rocket refuse every
+    -- scripted insert, so the chest could never load it (measured on 2.1.25).
+    -- A mission rocket serves no platform; the box is switched back off.
+    if silo.use_transitional_requests then silo.use_transitional_requests = false end
     local outstanding
     if silo.rocket_silo_status == defines.rocket_silo_status.rocket_ready and Model.current_costs(state, data.tier) then
         outstanding = load_rocket(state, data)
