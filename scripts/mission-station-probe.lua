@@ -75,6 +75,8 @@ function Public.install(Expanse, mts)
             check('station_survives_base_reset', Expanse.forfeit_impl.is_preserved_force_entity(state, chest)
                 and Expanse.forfeit_impl.is_preserved_force_entity(state, combinator))
             chest.insert{name = ITEM, count = 4}
+            -- A player ticking this box used to stall the mission: the rocket takes no scripted cargo while it is on.
+            silo.use_transitional_requests = true
             audit.phase = 'signals'
             -- The station is refreshed once a second; give it two refreshes.
             audit.resume_tick = game.tick + 120
@@ -83,6 +85,7 @@ function Public.install(Expanse, mts)
             local requests = section_counts(chest.get_requester_point().get_section(1))
             local signals = section_counts(combinator.get_control_behavior().get_section(1))
             -- Requests are the chest's target content; the signal is what is still missing from it.
+            check('automatic_platform_requests_are_switched_off', not silo.use_transitional_requests)
             check('chest_requests_only_the_outstanding_item', requests[ITEM] == 10 and table_size(requests) == 1)
             check('combinator_shows_what_is_missing_from_the_chest', signals[ITEM] == 6 and table_size(signals) == 1)
             chest.insert{name = ITEM, count = 6 + SURPLUS}

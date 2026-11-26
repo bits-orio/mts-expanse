@@ -57,7 +57,7 @@ local FORFEIT_DEATH_WINDOW_TICKS = 60 * 60
 local reset
 local destroy_natural_enemy_entities
 local FISH_BACKFILL_VERSION = '0.1.10-fish-v2'
-Public.forfeit_impl = { dialog = require 'maps.expanse.forfeit_dialog' }
+Public.forfeit_impl = { dialog = require 'maps.expanse.forfeit_dialog', kit = require 'maps.expanse.starter_kit' }
 Public.surface_impl = {}
 
 local function startup_setting(name, default)
@@ -1581,6 +1581,12 @@ function Public.forfeit_impl.place_force_players_at_spawn(state, surface, force)
     return moved
 end
 
+-- Everyone on the team starts over with the items a new player gets. A probe
+-- may wrap this to include characters that have no player.
+function Public.forfeit_impl.restore_kits(force, player)
+    return Public.forfeit_impl.kit.restore(force.players, player)
+end
+
 function Public.forfeit_impl.cleanup_state(state)
     state.hungry_scan_keys = nil
     state.hungry_scan_index = nil
@@ -1626,6 +1632,8 @@ function Public.forfeit_impl.run(state, player)
     -- Cancelling crafts or clearing the cursor can spill refunded items when
     -- inventories are full. Sweep after player cleanup so they cannot be recovered.
     counts.ground_items = Public.forfeit_impl.destroy_ground_items(surface)
+    -- Last, so nothing above can take the new kit away again.
+    Public.forfeit_impl.restore_kits(force, player)
     Public.forfeit_impl.cleanup_state(state)
     Functions.ensure_frontier_chests(state)
 
